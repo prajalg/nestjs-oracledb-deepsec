@@ -1,4 +1,4 @@
-import type { DynamicModule } from '@nestjs/common';
+import type { DynamicModule, ExecutionContext } from '@nestjs/common';
 import type { PoolAttributes } from 'oracledb';
 
 export interface AzureLoginOptions {
@@ -10,7 +10,19 @@ export interface AzureLoginOptions {
   secureCookie?: boolean;
 }
 
-export interface DeepSecOptions {
+export interface DeepSecIdentity {
+  endUserToken: string;
+  dataRoles?: string[];
+  attributes?: Record<string, unknown>;
+}
+
+export interface DeepSecOptions<TRequest = any> {
+  /** Read identity established by the application's authentication guard.
+   * When supplied, this is the only identity source; null/undefined rejects the request.
+   * Only map roles/attributes from trusted application policy.
+   */
+  mapIdentity?: (request: TRequest, context: ExecutionContext) =>
+    DeepSecIdentity | null | undefined | Promise<DeepSecIdentity | null | undefined>;
   /** Optional user-token acquisition for apps without their own sign-in. */
   azureLogin?: AzureLoginOptions;
   poolOptions: PoolAttributes & {
@@ -32,5 +44,5 @@ export interface DeepSecOptions {
 export declare const DEEPSEC_POOL: unique symbol;
 export declare function DeepSecPublic(): ClassDecorator & MethodDecorator;
 export declare class DeepSecModule {
-  static forRoot(options: DeepSecOptions): DynamicModule;
+  static forRoot<TRequest = any>(options: DeepSecOptions<TRequest>): DynamicModule;
 }
