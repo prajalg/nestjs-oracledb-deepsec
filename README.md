@@ -212,3 +212,23 @@ users. The guard uses Passport's `isAuthenticated()` and bridges `req.user` to C
 Tests verify session-ID regeneration, old-cookie rejection and user isolation.
 An existing app with its own Passport session setup does not install this demo's
 middleware or serializer; it only configures the DeepSec mapper.
+
+
+## Library replacement results
+
+- Nest's `ConfigurableModuleBuilder` owns configuration-provider generation and
+  async DI/import wiring; adapter-specific validation and mapping remain ours.
+- `express-session` owns session IDs, signed-cookie parsing and session lifecycle;
+  `memorystore` supplies bounded local storage. `lru-cache` holds pending MSAL jobs.
+- Standard Passport session middleware and an application serializer replace the
+  custom session lookup strategy. `passport-custom` is no longer a dependency.
+- The proxy bridge is retained for driver compatibility. Installed MSAL accepts
+  `system.proxyUrl`, but the shared driver's Azure extension accepts only a network
+  client implementing `sendGetRequestAsync` and `sendPostRequestAsync`. Its HTTP
+  implementation is not exported as a public MSAL API. Switching just login would
+  leave the OBO bridge and add a second configuration path without removing code.
+  No driver changes or private MSAL imports were introduced for this replacement.
+
+All replacements are covered by offline tests. Live Azure/OBO/Oracle verification
+still requires valid credentials. The known provider-failure cleanup defect in
+the shared driver remains documented and unchanged.
