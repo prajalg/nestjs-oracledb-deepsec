@@ -161,9 +161,21 @@ authenticated session. Never return or log it. The demo's guard stores that iden
 in CLS; another app can keep its own guard. MSAL is an optional peer for this login
 feature (the driver's Azure extension also needs MSAL for OBO).
 
-Sessions are bounded to 100 process-local entries, expire before token expiry
-minus 30 seconds or after an hour, and clear on restart. Pending login expires
-within ten minutes. No automatic renewal/shared store is implemented.
+Optional login uses `express-session` for signed cookies and session storage,
+with a bounded `memorystore` (100 entries) for local development. A bounded TTL
+`lru-cache` holds only in-flight, nonserializable MSAL jobs. The UI status poll
+hands the completed login into the session before protected queries can run.
+No tokens are included in the browser cookie or returned by login endpoints.
+
+Supply `azureLogin.sessionStore` to use an external express-session store and
+`sessionSecret` for a stable signing secret. By default the secret is generated
+per process and sessions require sign-in after restart. Share the signing secret
+when sharing a store. Pending device jobs remain process-local and expire within
+ten minutes; replicas need affinity or further job coordination. Authenticated
+sessions expire no later than token expiry minus 30 seconds or one hour. No
+automatic token renewal is implemented. The adapter stops/clears only its owned
+local store on shutdown and leaves a supplied store's lifecycle to the app.
+The extra session/cache packages are optional peers used only by built-in login.
 
 ## Context propagation and limits
 

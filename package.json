@@ -18,6 +18,9 @@
     "@nestjs/core": "^11.0.0",
     "@nestjs/passport": "11.0.5",
     "@nestjs/platform-express": "^11.0.0",
+    "express-session": "1.19.0",
+    "lru-cache": "11.5.3",
+    "memorystore": "1.6.8",
     "nestjs-cls": "7.0.2",
     "nestjs-oracledb-deepsec": "file:packages/nestjs-deepsec",
     "oracledb": "file:../drivers/node-oracledb",
@@ -29,6 +32,7 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
+    "@types/express-session": "1.19.0",
     "@types/node": "^22.0.0",
     "@types/oracledb": "^6.10.0",
     "typescript": "^5.9.3"

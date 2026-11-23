@@ -191,3 +191,25 @@ underlying release runs. Both resolution modes are affected. Passing diagnostics
 record this bug; they do not certify correct cleanup after provider failure.
 The driver is unchanged per the user's request. Live Azure/Oracle verification
 remains pending valid credentials; streaming/background work is the next checkpoint.
+
+
+## Library replacement: session middleware
+
+`express-session` now generates/signs session IDs, parses cookies and loads/saves
+server-side sessions. Optional Azure login mounts this middleware automatically.
+The local default uses `memorystore` with at most 100 sessions and expiry pruning.
+A bounded `lru-cache` holds only nonserializable, in-flight MSAL device-login jobs.
+There is no custom cookie parser, ID generator or session Map/sweep loop.
+
+After Microsoft sign-in completes, the UI's existing status poll transfers the
+completed result into the server-side session. Protected requests authenticate
+only after that handoff. Expiry never exceeds token expiry minus 30 seconds or
+one hour. Logout destroys the session and cancels pending work; late MSAL results
+cannot restore a removed pending login. Session cookies are signed, HttpOnly and
+SameSite=Strict; secure cookies remain the default (local demo explicitly uses HTTP).
+
+`azureLogin.sessionStore` accepts an external express-session store;
+`sessionSecret` supplies a persistent signing secret. The local default generates
+a secret per process, so restart requires sign-in. A shared store needs the same
+signing secret across processes, and in-flight device jobs still require process
+affinity. This local configuration is not a complete production deployment.

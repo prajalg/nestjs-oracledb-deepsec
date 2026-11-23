@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { promisify } = require('node:util');
 const { Module } = require('@nestjs/common');
 const { PassportModule } = require('@nestjs/passport');
 const { AzureSessionStrategy } = require('../dist/azure-session.strategy');
@@ -150,16 +151,23 @@ test('real Passport session strategy bridges concurrent authenticated users into
       headers: { Cookie: cookies[0], Authorization: 'Bearer spoofed-token' },
     });
     assert.equal(spoofedBearer.status, 401, 'session auth must not trust raw bearer tokens');
+    const tampered = cookies[0].slice(0, -1) + (cookies[0].endsWith('A') ? 'B' : 'A');
+    assert.equal((await fetch(`${base}/api/query`, { headers: { Cookie: tampered } })).status, 401,
+      'library must reject a tampered signed session cookie');
     const logout = await fetch(`${base}/deepsec/auth/logout`, {
       method: 'POST', headers: { Cookie: cookies[0] },
     });
     assert.equal(logout.status, 201);
     assert.equal((await fetch(`${base}/api/query`, { headers: { Cookie: cookies[0] } })).status, 401);
-    service.sessions.get(cookies[1].split('=')[1]).expiresAt = Date.now() - 1;
+    const sessions = await promisify(service.store.all).call(service.store);
+    const [expiredId, expiredSession] = Object.entries(sessions)
+      .find(([, session]) => session.identity?.username === 'user-b');
+    expiredSession.identity.expiresAt = Date.now() - 1;
+    await promisify(service.store.set).call(service.store, expiredId, expiredSession);
     assert.equal((await fetch(`${base}/api/query`, { headers: { Cookie: cookies[1] } })).status, 401);
     assert.equal(observed.length, 2);
   } finally { await app.close(); }
-  assert.equal(service.sessions.size, 0);
+  assert.equal(service.pending.size, 0);
 });
 
 test('login rejects cross-origin requests and cancellation cannot resurrect a logged-out session', async () => {
@@ -182,7 +190,7 @@ test('login rejects cross-origin requests and cancellation cannot resurrect a lo
     pending[0].resolve(result('must-not-be-restored'));
     await flush();
     assert.equal((await fetch(`${base}/api/query`, { headers: { Cookie: cookie } })).status, 401);
-    assert.equal(service.sessions.size, 0);
+    assert.equal(service.pending.size, 0);
   } finally { await app.close(); }
 });
 
@@ -200,10 +208,10 @@ test('failed sign-in is reported without returning provider errors or tokens', a
   } finally { await app.close(); }
 });
 
-test('secure cookies are the default; invalid login configuration is rejected', () => {
+test('secure cookies are the default; invalid login configuration is rejected', async () => {
   const service = new AzureLoginService({ ...loginOptions, secureCookie: undefined });
   try { assert.equal(service.cookieOptions().secure, true); }
-  finally { service.onApplicationShutdown(); }
+  finally { await service.onApplicationShutdown(); }
   assert.throws(() => new AzureLoginService({ clientId: 'x', authority: 'x', scopes: [] }), /azureLogin/);
 });
 
@@ -257,6 +265,9 @@ test('simulated expired OBO secret fails safely after real Passport authenticati
     const cookie = start.headers.get('set-cookie').split(';')[0];
     pending[0].resolve(result('server-only-test-user-token'));
     await flush();
+    assert.equal((await (await fetch(`${base}/deepsec/auth/status`, {
+      headers: { Cookie: cookie },
+    })).json()).state, 'authenticated');
     const response = await fetch(`${base}/api/query`, { headers: { Cookie: cookie } });
     assert.equal(response.status, 503);
     assert.equal(response.headers.get('cache-control'), 'no-store');

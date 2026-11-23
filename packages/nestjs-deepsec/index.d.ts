@@ -6,6 +6,10 @@ export interface AzureLoginOptions {
   authority: string;
   scopes: string[];
   networkClient?: unknown;
+  /** Optional persistent session signing secret. Default is random per process. */
+  sessionSecret?: string;
+  /** An express-session compatible server-side store. Local default is bounded memory. */
+  sessionStore?: unknown;
   /** Defaults to true. Set false only for local HTTP development. */
   secureCookie?: boolean;
 }

@@ -150,6 +150,12 @@ const { ConfigurableModuleClass } = new ConfigurableModuleBuilder({ optionsInjec
   .build();
 
 class DeepSecModule extends ConfigurableModuleClass {
+  constructor(login) { super(); this.login = login; }
+
+  configure(consumer) {
+    if (this.login.middleware) consumer.apply(this.login.middleware).forRoutes('{*path}');
+  }
+
   static forRoot(options) {
     const enableAzureLogin = Boolean(options?.azureLogin);
     validateOptions(options, enableAzureLogin);
@@ -166,6 +172,7 @@ class DeepSecModule extends ConfigurableModuleClass {
     return super.forRootAsync(options);
   }
 }
+Inject(AzureLoginService)(DeepSecModule, undefined, 0);
 Module({})(DeepSecModule);
 
 module.exports = {
