@@ -131,6 +131,7 @@ DeepSecModule.forRootAsync({
     poolOptions,
     azureLogin: {
       clientId: userLoginClientId,
+      // passportSession: true, // opt-in when the app supplies a Passport serializer
       authority: tenantAuthority,
       scopes: [middleTierUserScope],
       // networkClient,       // optional corporate-proxy MSAL client
@@ -207,3 +208,16 @@ subscription need explicit scope/resource integration.
 
 NestJS, RxJS and oracledb are peers so the app and adapter share the driver instance.
 No SQL, app credentials or corporate proxy addresses are hardcoded in the package.
+
+
+### Standard Passport session integration
+
+The included demo sets `azureLogin.passportSession: true` and registers its
+`AzureSessionSerializer` with `PassportModule.register({ session: true })`.
+Built-in login then mounts session middleware, Passport initialization and
+Passport session restoration in that order. The status endpoint calls `req.logIn`
+when MSAL completes; Passport regenerates the ID and serializes the user into the
+server-side session store. Logout calls `req.logOut` before destroying the session.
+The app's serializer controls the persisted fields and token-expiry checks.
+No access token is included in the browser cookie. Existing authenticated apps
+should retain their own session middleware and serializer and omit built-in login.

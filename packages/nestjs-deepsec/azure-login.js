@@ -44,6 +44,11 @@ class AzureLoginService {
       store: this.store, resave: false, saveUninitialized: false,
       cookie: this.cookieOptions(PENDING_MS),
     });
+    this.middlewares = [this.middleware];
+    if (options.passportSession) {
+      const passport = require('passport');
+      this.middlewares.push(passport.initialize(), passport.session());
+    }
   }
 
   cookieOptions(maxAge) {
@@ -109,16 +114,31 @@ class AzureLoginService {
     } finally { clearTimeout(timeout); }
   }
 
+  identityForRequest(request) {
+    if (!this.options?.passportSession) return request.session?.identity;
+    const user = request.user;
+    return user && { token: user.accessToken, expiresAt: user.expiresAt, username: user.username };
+  }
+
   async status(request) {
-    const entry = this.pending?.get(request.sessionID);
+    const pendingId = request.sessionID;
+    const entry = this.pending?.get(pendingId);
     if (entry?.identity && entry.identity.expiresAt > Date.now()) {
-      request.session.identity = entry.identity;
-      delete request.session.pendingLogin;
-      request.session.cookie.maxAge = entry.identity.expiresAt - Date.now();
+      const identity = entry.identity;
+      if (this.options.passportSession) {
+        // Passport regenerates the session ID and serializes only server-side data.
+        await promisify(request.logIn).call(request, {
+          accessToken: identity.token, expiresAt: identity.expiresAt, username: identity.username,
+        });
+      } else {
+        request.session.identity = identity;
+        delete request.session.pendingLogin;
+      }
+      request.session.cookie.maxAge = identity.expiresAt - Date.now();
       await invoke(request.session, 'save');
-      this.pending.delete(request.sessionID);
+      this.pending.delete(pendingId);
     }
-    const identity = request.session?.identity;
+    const identity = this.identityForRequest(request);
     if (identity?.expiresAt > Date.now()) {
       return { enabled: true, state: 'authenticated', username: identity.username };
     }
@@ -127,7 +147,7 @@ class AzureLoginService {
   }
 
   tokenForRequest(request) {
-    const identity = request.session?.identity;
+    const identity = this.identityForRequest(request);
     return identity?.expiresAt > Date.now() ? identity.token : undefined;
   }
 
@@ -135,6 +155,7 @@ class AzureLoginService {
     if (!this.options) throw new NotFoundException();
     this.assertSameOrigin(request);
     this.pending.delete(request.sessionID);
+    if (this.options.passportSession) await promisify(request.logOut).call(request);
     await invoke(request.session, 'destroy');
     response.clearCookie(COOKIE, this.cookieOptions());
     return { state: 'signedOut' };

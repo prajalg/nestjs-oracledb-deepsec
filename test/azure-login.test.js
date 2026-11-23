@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { promisify } = require('node:util');
 const { Module } = require('@nestjs/common');
 const { PassportModule } = require('@nestjs/passport');
-const { AzureSessionStrategy } = require('../dist/azure-session.strategy');
+const { AzureSessionSerializer } = require('../dist/azure-session.serializer');
 const { ClsModule, ClsService } = require('nestjs-cls');
 const { setTimeout: delay } = require('node:timers/promises');
 const { NestFactory, APP_GUARD } = require('@nestjs/core');
@@ -16,7 +16,7 @@ const { AzureSessionGuard, mapDemoIdentity } = require('../dist/azure-session.gu
 
 const loginOptions = {
   clientId: 'test-public-client', authority: 'https://login.microsoftonline.com/test',
-  scopes: ['test-middle-tier/read'], secureCookie: false,
+  scopes: ['test-middle-tier/read'], secureCookie: false, passportSession: true,
 };
 function fakeAzure() {
   const pending = [];
@@ -79,8 +79,8 @@ async function createApp(login, azureLogin = loginOptions, connectionError) {
     return provider;
   });
   class TestModule {}
-  Module({ imports: [PassportModule.register({ session: false }), ClsModule.forRoot({ global: true, middleware: { mount: true } }), bridge],
-    controllers: [AppController], providers: [DatabaseService, AzureSessionStrategy,
+  Module({ imports: [PassportModule.register({ session: true }), ClsModule.forRoot({ global: true, middleware: { mount: true } }), bridge],
+    controllers: [AppController], providers: [DatabaseService, AzureSessionSerializer,
     { provide: APP_GUARD, useClass: AzureSessionGuard }] })(TestModule);
   const app = await NestFactory.create(TestModule, { logger: false });
   await app.listen(0, '127.0.0.1');
@@ -88,7 +88,7 @@ async function createApp(login, azureLogin = loginOptions, connectionError) {
   return { app, base: await app.getUrl(), observed, cls };
 }
 
-test('real Passport session strategy bridges concurrent authenticated users into CLS and driver scopes', async () => {
+test('standard Passport session restoration bridges concurrent authenticated users into CLS and driver scopes', async () => {
   const { service, pending } = fakeAzure();
   const { app, base, observed, cls } = await createApp(service);
   try {
@@ -132,7 +132,12 @@ test('real Passport session strategy bridges concurrent authenticated users into
       assert.deepEqual(await status.json(), {
         enabled: true, state: 'authenticated', username: index ? 'user-b' : 'user-a',
       });
-      assert.ok(!status.headers.get('set-cookie').includes('server-only-token'));
+      const authenticatedCookie = status.headers.get('set-cookie');
+      assert.ok(!authenticatedCookie.includes('server-only-token'));
+      const previousCookie = cookies[index];
+      cookies[index] = authenticatedCookie.split(';')[0];
+      assert.notEqual(cookies[index], previousCookie, 'Passport regenerates the ID after login');
+      assert.equal((await fetch(`${base}/api/query`, { headers: { Cookie: previousCookie } })).status, 401);
     }
     // Both users execute concurrently, across nested CLS and driver ALS scopes.
     await Promise.all(cookies.map(async cookie => {
@@ -161,8 +166,8 @@ test('real Passport session strategy bridges concurrent authenticated users into
     assert.equal((await fetch(`${base}/api/query`, { headers: { Cookie: cookies[0] } })).status, 401);
     const sessions = await promisify(service.store.all).call(service.store);
     const [expiredId, expiredSession] = Object.entries(sessions)
-      .find(([, session]) => session.identity?.username === 'user-b');
-    expiredSession.identity.expiresAt = Date.now() - 1;
+      .find(([, session]) => session.passport?.user?.username === 'user-b');
+    expiredSession.passport.user.expiresAt = Date.now() - 1;
     await promisify(service.store.set).call(service.store, expiredId, expiredSession);
     assert.equal((await fetch(`${base}/api/query`, { headers: { Cookie: cookies[1] } })).status, 401);
     assert.equal(observed.length, 2);
@@ -262,12 +267,12 @@ test('simulated expired OBO secret fails safely after real Passport authenticati
   try {
     const start = await fetch(`${base}/deepsec/auth/start`, { method: 'POST' });
     assert.equal(start.status, 201);
-    const cookie = start.headers.get('set-cookie').split(';')[0];
+    let cookie = start.headers.get('set-cookie').split(';')[0];
     pending[0].resolve(result('server-only-test-user-token'));
     await flush();
-    assert.equal((await (await fetch(`${base}/deepsec/auth/status`, {
-      headers: { Cookie: cookie },
-    })).json()).state, 'authenticated');
+    const completed = await fetch(`${base}/deepsec/auth/status`, { headers: { Cookie: cookie } });
+    assert.equal((await completed.json()).state, 'authenticated');
+    cookie = completed.headers.get('set-cookie').split(';')[0];
     const response = await fetch(`${base}/api/query`, { headers: { Cookie: cookie } });
     assert.equal(response.status, 503);
     assert.equal(response.headers.get('cache-control'), 'no-store');

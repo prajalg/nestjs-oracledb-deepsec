@@ -25,7 +25,6 @@
     "nestjs-oracledb-deepsec": "file:packages/nestjs-deepsec",
     "oracledb": "file:../drivers/node-oracledb",
     "passport": "0.7.0",
-    "passport-custom": "1.1.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "undici": "7.24.3"
@@ -35,6 +34,7 @@
     "@types/express-session": "1.19.0",
     "@types/node": "^22.0.0",
     "@types/oracledb": "^6.10.0",
+    "@types/passport": "1.0.17",
     "typescript": "^5.9.3"
   }
 }

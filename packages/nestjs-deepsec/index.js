@@ -153,7 +153,7 @@ class DeepSecModule extends ConfigurableModuleClass {
   constructor(login) { super(); this.login = login; }
 
   configure(consumer) {
-    if (this.login.middleware) consumer.apply(this.login.middleware).forRoutes('{*path}');
+    if (this.login.middleware) consumer.apply(...this.login.middlewares).forRoutes('{*path}');
   }
 
   static forRoot(options) {

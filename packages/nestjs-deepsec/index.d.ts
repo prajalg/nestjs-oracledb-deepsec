@@ -8,6 +8,8 @@ export interface AzureLoginOptions {
   networkClient?: unknown;
   /** Optional persistent session signing secret. Default is random per process. */
   sessionSecret?: string;
+  /** Optional Passport session restoration; the app supplies its serializer. */
+  passportSession?: boolean;
   /** An express-session compatible server-side store. Local default is bounded memory. */
   sessionStore?: unknown;
   /** Defaults to true. Set false only for local HTTP development. */

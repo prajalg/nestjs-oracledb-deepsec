@@ -21,7 +21,8 @@
     "@azure/msal-node": "^3.0.0",
     "express-session": "^1.19.0",
     "memorystore": "^1.6.8",
-    "lru-cache": "^11.5.3"
+    "lru-cache": "^11.5.3",
+    "passport": "^0.7.0"
   },
   "peerDependenciesMeta": {
     "@azure/msal-node": {
@@ -34,6 +35,9 @@
       "optional": true
     },
     "lru-cache": {
+      "optional": true
+    },
+    "passport": {
       "optional": true
     }
   }
