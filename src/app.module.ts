@@ -44,7 +44,7 @@ const networkClient = createAzureNetworkClient();
           endUserSecParams: {
             spiType: 'azure',
             authFlow: 'onBehalfOf',
-            contextResolution: 'connection',
+            contextResolution: 'operation',
             clientId: required('AZURE_DB_CLIENT_ID'),
             clientSecret: required('AZURE_DB_CLIENT_CREDENTIAL'),
             authority: required('AZURE_DB_AUTHORITY'),

@@ -13,7 +13,7 @@ const options = {
   poolOptions: {
     user: 'test', password: 'test', connectString: 'localhost:1521/test', poolMin: 0,
     endUserSecParams: {
-      spiType: 'azure', authFlow: 'onBehalfOf',
+      spiType: 'azure', authFlow: 'onBehalfOf', contextResolution: 'operation',
       clientId: 'test-client', clientSecret: 'test-secret',
       authority: 'https://login.microsoftonline.com/test-tenant',
       scopes: ['test-resource/.default'],
@@ -29,6 +29,7 @@ test('pool creation installs the real shared driver provider without opening a c
     // This assertion deliberately checks the driver hook's installation only.
     // It does not prove Azure exchange or database enforcement.
     assert.equal(typeof pool._securityContextProvider, 'function');
+    assert.equal(pool._securityContextProvider._contextResolution, 'operation');
     assert.equal(pool.connectionsOpen, 0);
   } finally {
     await pool.close(0);

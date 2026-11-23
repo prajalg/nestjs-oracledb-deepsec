@@ -52,7 +52,7 @@ For the Azure OBO demo, `endUserSecParams` contains:
 {
   spiType: 'azure',
   authFlow: 'onBehalfOf',
-  contextResolution: 'connection',
+  contextResolution: 'operation',
   clientId: middleTierClientId,
   clientSecret: middleTierClientSecret,
   authority: tenantAuthority,
@@ -172,11 +172,26 @@ scope and returns the subscription for error/cancellation teardown. The driver
 handles OBO and EUSC construction/installation. CLS holds application identity;
 the adapter does not create a second app CLS store or require CLS as a dependency.
 
-The demo borrows/releases a connection inside each query with connection-level
-resolution. Do not share borrowed connections concurrently between users.
-Operation resolution is supported by configuration but broader lifecycle coverage
-remains future work. Background jobs, non-HTTP transports and streams consumed
-after the handler subscription need explicit scope/resource integration.
+The demo explicitly configures `contextResolution: 'operation'`, following the
+review's recommended default for multi-user integration. The shared driver
+resolves identity before each supported operation, installs EUSC and clears it
+afterward. Its token extension can reuse cached tokens; each resolution does not
+necessarily contact Azure. The adapter does not override an explicitly selected
+mode or retrofit an existing pool. Configure the existing pool at creation time.
+
+Connection resolution remains available for apps with strictly request-scoped
+borrowing. Neither mode permits concurrent connection sharing between users.
+Keep borrowing/releasing within the request and awaiting its database work.
+No changes to query methods or the shared driver are needed to select operation
+resolution. Offline tests cover both modes, including token changes, SQL-error
+cleanup, and sequential identity isolation.
+
+An independent shared-driver cleanup defect remains: initial OBO failure can
+cause both execute and close to return NJS-198 before the underlying release
+runs. Both modes are affected. Diagnostic tests reproduce this known failure;
+they do not certify correct provider-failure cleanup. The driver is unchanged.
+Background jobs, non-HTTP transports and streams consumed after the handler
+subscription need explicit scope/resource integration.
 
 NestJS, RxJS and oracledb are peers so the app and adapter share the driver instance.
 No SQL, app credentials or corporate proxy addresses are hardcoded in the package.

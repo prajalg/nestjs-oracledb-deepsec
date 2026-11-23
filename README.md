@@ -152,9 +152,9 @@ strategy and use its identity mapping; the strategy added here belongs to the de
 
 ## Following checkpoints
 
-1. Review Passport integration before committing this checkpoint.
-2. Exercise operation-level driver resolution and context cleanup, then consider
-   changing the demo default. Do not share borrowed connections concurrently.
+1. Passport integration is committed as `82385f4`.
+2. The demo now configures operation resolution explicitly, following the review.
+   Offline component tests cover both modes and document the known cleanup defect.
 3. Define and test streaming cancellation/resource lifetime and background-job
    scope boundaries, including rejection when identity is missing.
 4. Review authentication trust, token/session lifecycle, pool enforcement and
@@ -162,3 +162,32 @@ strategy and use its identity mapping; the strategy added here belongs to the de
    pool must have the driver plugin configured before creation.
 
 These are separate review checkpoints; this change does not claim they are complete.
+
+
+## Checkpoint 2: operation resolution, following the review
+
+The demo explicitly configures `contextResolution: 'operation'` in
+`poolOptions.endUserSecParams`. The existing shared driver resolves identity
+before each supported database operation, installs EUSC for that operation and
+clears it afterward. This does not require a new driver API, wrapper, interceptor
+or query-method change. The Nest adapter still establishes one request scope.
+
+The driver consults its token extension for each operation; cached tokens can be
+reused, so resolution does not imply an Azure network request for every query.
+The configured mode does not make concurrent connection sharing between users
+safe. Continue borrowing/releasing within the request and awaiting its DB work.
+For existing pools, configure operation resolution when creating the pool;
+the adapter does not retrofit its configuration.
+
+Offline component tests exercise the linked driver's execute/close wrappers,
+provider, EUSC construction, serialization lock and Thin context set/clear.
+Azure exchange and SQL/protocol I/O are stubbed; no database sockets are opened.
+Coverage includes repeated operations, cached/refreshed token results, SQL-error
+cleanup, sequential borrower isolation and connection-mode compatibility.
+
+Two diagnostic tests reproduce the independent, unfixed shared-driver defect:
+initial OBO failure causes execute and then close to return NJS-198 before the
+underlying release runs. Both resolution modes are affected. Passing diagnostics
+record this bug; they do not certify correct cleanup after provider failure.
+The driver is unchanged per the user's request. Live Azure/Oracle verification
+remains pending valid credentials; streaming/background work is the next checkpoint.
