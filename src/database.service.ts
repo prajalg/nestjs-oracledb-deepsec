@@ -2,7 +2,7 @@ import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common'
 import * as oracledb from 'oracledb';
 import { DEEPSEC_POOL } from 'nestjs-oracledb-deepsec';
 import { performance } from 'node:perf_hooks';
-const { errorDetails } = require('nestjs-oracledb-deepsec/error-details');
+import { errorDetails } from 'nestjs-oracledb-deepsec/error-details';
 
 export const DEMO_QUERY = `SELECT SYS_CONTEXT('USERENV', 'SESSION_USER') AS DB_USER,
        SYS_CONTEXT('USERENV', 'DB_NAME') AS DB_NAME,

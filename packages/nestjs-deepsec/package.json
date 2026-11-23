@@ -3,16 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "Minimal NestJS bridge to the node-oracledb end-user security plugin",
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "files": [
-    "index.js",
-    "index.d.ts",
-    "README.md",
-    "azure-login.js",
-    "tokens.js",
-    "error-details.js",
-    "identity-mappers.js"
+    "dist",
+    "README.md"
   ],
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
@@ -41,6 +36,63 @@
     },
     "passport": {
       "optional": true
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./azure-login": {
+      "types": "./dist/azure-login.d.ts",
+      "require": "./dist/azure-login.js",
+      "default": "./dist/azure-login.js"
+    },
+    "./error-details": {
+      "types": "./dist/error-details.d.ts",
+      "require": "./dist/error-details.js",
+      "default": "./dist/error-details.js"
+    },
+    "./identity-mappers": {
+      "types": "./dist/identity-mappers.d.ts",
+      "require": "./dist/identity-mappers.js",
+      "default": "./dist/identity-mappers.js"
+    },
+    "./tokens": {
+      "types": "./dist/tokens.d.ts",
+      "require": "./dist/tokens.js",
+      "default": "./dist/tokens.js"
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "@types/node": "^22.0.0"
+  },
+  "dependencies": {
+    "@types/express": "^5.0.0",
+    "@types/express-session": "1.19.0",
+    "@types/passport": "1.0.17",
+    "@types/oracledb": "^6.10.0"
+  },
+  "typesVersions": {
+    "*": {
+      "azure-login": [
+        "dist/azure-login.d.ts"
+      ],
+      "error-details": [
+        "dist/error-details.d.ts"
+      ],
+      "identity-mappers": [
+        "dist/identity-mappers.d.ts"
+      ],
+      "tokens": [
+        "dist/tokens.d.ts"
+      ]
     }
   }
 }

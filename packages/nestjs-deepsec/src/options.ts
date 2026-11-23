@@ -1,4 +1,4 @@
-import type { DynamicModule, ExecutionContext, ModuleMetadata, FactoryProvider } from '@nestjs/common';
+import type { ExecutionContext, ModuleMetadata, FactoryProvider } from '@nestjs/common';
 import type { Pool, PoolAttributes } from 'oracledb';
 
 export interface AzureLoginOptions {
@@ -69,27 +69,3 @@ export interface DeepSecAsyncOptions<TRequest = any> {
     DeepSecOptions<TRequest> | Promise<DeepSecOptions<TRequest>>;
 }
 
-/** Extract a bearer token only; does not authenticate or authorize the request. */
-export declare function mapBearerIdentity(request: { headers?: { authorization?: string } }): DeepSecIdentity | null;
-/** Read built-in Azure login's server-side session when passportSession is disabled.
- * Passport apps should map their authenticated request.user or CLS user instead.
- */
-export declare function mapSessionIdentity(request: {
-  session?: { identity?: { token: string; expiresAt: number } };
-}): DeepSecIdentity | null;
-
-/** Optional-login session reader for server-side authentication guards. */
-export declare class AzureLoginService {
-  /** Returns a token only for a nonexpired authenticated server-side session.
-   * Never return this value from an HTTP endpoint or log it.
-   */
-  tokenForRequest(request: { headers: { cookie?: string } }): string | undefined;
-}
-/** Metadata key used by @DeepSecPublic(), for authentication-guard integration. */
-export declare const DEEPSEC_PUBLIC_ROUTE: unique symbol;
-export declare const DEEPSEC_POOL: unique symbol;
-export declare function DeepSecPublic(): ClassDecorator & MethodDecorator;
-export declare class DeepSecModule {
-  static forRoot<TRequest = any>(options: DeepSecOptions<TRequest>): DynamicModule;
-  static forRootAsync<TRequest = any>(options: DeepSecAsyncOptions<TRequest>): DynamicModule;
-}

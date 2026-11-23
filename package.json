@@ -7,10 +7,11 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build:plugin && tsc -p tsconfig.json",
     "start": "node --preserve-symlinks --env-file-if-exists=.env dist/main.js",
     "dev": "npm run build && npm start",
-    "test": "npm run build && node --preserve-symlinks --test test/*.test.js"
+    "test": "npm run build && node --preserve-symlinks --test test/*.test.js",
+    "build:plugin": "npm --prefix packages/nestjs-deepsec run build"
   },
   "dependencies": {
     "@azure/msal-node": "^3.0.0",

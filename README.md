@@ -27,8 +27,8 @@ The ignored .env contains Oracle settings, Azure middle-tier credentials, public
 
 ## Read the code
 
-- `packages/nestjs-deepsec/index.js`: loads the shared driver plugin, creates/exports DEEPSEC_POOL, installs the HTTP request-scope interceptor, and closes the pool on shutdown.
-- `packages/nestjs-deepsec/azure-login.js`: optional Azure device login, bounded server-side sessions, cookie resolution, expiry, logout, and login endpoints. Access tokens are never returned by these endpoints.
+- `packages/nestjs-deepsec/src/index.ts`: loads the shared driver plugin, creates/exports DEEPSEC_POOL, installs the HTTP request-scope interceptor, and closes the pool on shutdown.
+- `packages/nestjs-deepsec/src/azure-login.ts`: optional Azure device login, bounded server-side sessions, cookie resolution, expiry, logout, and login endpoints. Access tokens are never returned by these endpoints.
 - `src/azure-session.serializer.ts`: Passport stores/restores the minimal server-side user and rejects expired credentials.
 - `src/azure-session.guard.ts`: the real NestJS session guard authenticates protected requests, stores the authenticated user in request-local CLS, and maps it to driver identity metadata.
 - `src/app.module.ts`: initializes CLS middleware, registers the guard and injected identity mapper, configures optional azureLogin (public client/user scope) and poolOptions.endUserSecParams (middle-tier credentials/database scope).
@@ -232,3 +232,7 @@ middleware or serializer; it only configures the DeepSec mapper.
 All replacements are covered by offline tests. Live Azure/OBO/Oracle verification
 still requires valid credentials. The known provider-failure cleanup defect in
 the shared driver remains documented and unchanged.
+
+The plugin is maintained in TypeScript. Root `npm run build` compiles it before
+the demo; `npm pack` inside its directory builds a tarball containing JavaScript
+and generated declarations. Consumers of the tarball need no plugin build step.

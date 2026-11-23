@@ -1,20 +1,32 @@
-'use strict';
-require('reflect-metadata');
-const { Module, Injectable, Inject, UnauthorizedException, ConfigurableModuleBuilder } = require('@nestjs/common');
-const { APP_INTERCEPTOR, Reflector } = require('@nestjs/core');
-const { Observable } = require('rxjs');
-const oracledb = require('oracledb');
+import 'reflect-metadata';
+import { Module, Injectable, Inject, UnauthorizedException, ConfigurableModuleBuilder,
+  type DynamicModule, type ExecutionContext, type CallHandler, type NestInterceptor,
+  type MiddlewareConsumer, type NestModule, type OnApplicationShutdown } from '@nestjs/common';
+import { APP_INTERCEPTOR, Reflector } from '@nestjs/core';
+import { Observable } from 'rxjs';
+import * as oracledb from 'oracledb';
+import type { DeepSecOptions, DeepSecAsyncOptions, DeepSecIdentity } from './options';
+import { DEEPSEC_POOL, PUBLIC_ROUTE } from './tokens';
+import { AzureLoginService, AzureLoginController } from './azure-login';
 
-// Registers the driver's endUserSecParams configuration hook. No token logic here.
-require('oracledb/plugins/token/endUserSecurityProvider');
-const contextProvider = oracledb.getSecurityContextProvider();
-const { DEEPSEC_POOL, PUBLIC_ROUTE, DeepSecPublic } = require('./tokens');
-const { AzureLoginService, AzureLoginController } = require('./azure-login');
-const { mapBearerIdentity, mapSessionIdentity } = require('./identity-mappers');
+// Register the shared driver hook. The installed driver types do not yet expose
+// its context API; keep this compatibility type at the driver boundary only.
+import 'oracledb/plugins/token/endUserSecurityProvider';
+const contextProvider = (oracledb as typeof oracledb & {
+  getSecurityContextProvider(): {
+    runWithContext<T>(metadata: DeepSecIdentity, callback: () => T): T;
+  };
+}).getSecurityContextProvider();
+
+export type * from './options';
+export { DeepSecPublic, DEEPSEC_POOL, PUBLIC_ROUTE as DEEPSEC_PUBLIC_ROUTE } from './tokens';
+export { AzureLoginService } from './azure-login';
+export { mapBearerIdentity, mapSessionIdentity } from './identity-mappers';
+
 const OPTIONS = Symbol('DEEPSEC_OPTIONS');
 const RAW_OPTIONS = Symbol('DEEPSEC_RAW_OPTIONS');
 
-function snapshotIdentity(identity) {
+function snapshotIdentity(identity: DeepSecIdentity | null | undefined): DeepSecIdentity {
   if (!identity || typeof identity.endUserToken !== 'string' || !identity.endUserToken.trim() ||
       (identity.dataRoles !== undefined && (!Array.isArray(identity.dataRoles) ||
         !identity.dataRoles.every(role => typeof role === 'string' && role.trim()))) ||
@@ -36,16 +48,19 @@ function snapshotIdentity(identity) {
   }
 }
 
-class DeepSecInterceptor {
-  constructor(reflector, options) {
-    this.reflector = reflector;
+@Injectable()
+class DeepSecInterceptor implements NestInterceptor {
+  private readonly mapIdentity: DeepSecOptions['mapIdentity'];
+  private readonly isPublic: DeepSecOptions['isPublic'];
+
+  constructor(private readonly reflector: Reflector, @Inject(OPTIONS) options: DeepSecOptions) {
     this.mapIdentity = options.mapIdentity;
     this.isPublic = options.isPublic;
   }
 
-  async intercept(context, next) {
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
     if (context.getType() !== 'http') return next.handle();
-    let isPublic = this.reflector.getAllAndOverride(PUBLIC_ROUTE, [
+    let isPublic = this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE, [
       context.getHandler(), context.getClass(),
     ]);
     if (isPublic !== true && this.isPublic) {
@@ -65,22 +80,20 @@ class DeepSecInterceptor {
     ));
   }
 }
-Injectable()(DeepSecInterceptor);
-Inject(Reflector)(DeepSecInterceptor, undefined, 0);
-Inject(OPTIONS)(DeepSecInterceptor, undefined, 1);
-
-class PoolLifecycle {
-  constructor(pool, options) { this.pool = pool; this.ownsPool = options.poolOptions !== undefined; }
+@Injectable()
+class PoolLifecycle implements OnApplicationShutdown {
+  private readonly ownsPool: boolean;
+  constructor(@Inject(DEEPSEC_POOL) private readonly pool: oracledb.Pool,
+    @Inject(OPTIONS) options: DeepSecOptions) {
+    this.ownsPool = options.poolOptions !== undefined;
+  }
   async onApplicationShutdown() {
-    // A borrowed application pool keeps its existing owner and shutdown lifecycle.
+    // A borrowed pool keeps its application-owned shutdown lifecycle.
     if (this.ownsPool) await this.pool.close(10);
   }
 }
-Injectable()(PoolLifecycle);
-Inject(DEEPSEC_POOL)(PoolLifecycle, undefined, 0);
-Inject(OPTIONS)(PoolLifecycle, undefined, 1);
 
-function validateOptions(options, enableAzureLogin) {
+function validateOptions(options: DeepSecOptions, enableAzureLogin: boolean): DeepSecOptions {
   const hasPool = options?.pool !== undefined;
   const hasPoolOptions = options?.poolOptions !== undefined;
   if (hasPool === hasPoolOptions) {
@@ -108,18 +121,18 @@ function validateOptions(options, enableAzureLogin) {
   return options;
 }
 
-function createModule(definition, enableAzureLogin) {
+function createModule(definition: DynamicModule, enableAzureLogin: boolean): DynamicModule {
   return {
     ...definition,
     controllers: enableAzureLogin ? [AzureLoginController] : [],
     providers: [
-      ...definition.providers,
+      ...(definition.providers ?? []),
       { provide: OPTIONS, inject: [RAW_OPTIONS],
-        useFactory: options => validateOptions(options, enableAzureLogin) },
+        useFactory: (options: DeepSecOptions) => validateOptions(options, enableAzureLogin) },
       { provide: AzureLoginService, inject: [OPTIONS],
-        useFactory: config => new AzureLoginService(config.azureLogin) },
+        useFactory: (config: DeepSecOptions) => new AzureLoginService(config.azureLogin) },
       { provide: DEEPSEC_POOL, inject: [OPTIONS],
-        useFactory: config => config.pool ?? oracledb.createPool(config.poolOptions) },
+        useFactory: (config: DeepSecOptions) => config.pool ?? oracledb.createPool(config.poolOptions) },
       PoolLifecycle,
       { provide: APP_INTERCEPTOR, useClass: DeepSecInterceptor },
     ],
@@ -128,40 +141,33 @@ function createModule(definition, enableAzureLogin) {
 }
 
 // Nest owns async configuration, imports and dependency-injection plumbing.
-const { ConfigurableModuleClass } = new ConfigurableModuleBuilder({ optionsInjectionToken: RAW_OPTIONS })
+const { ConfigurableModuleClass } = new ConfigurableModuleBuilder<DeepSecOptions>({ optionsInjectionToken: RAW_OPTIONS })
   .setClassMethodName('forRoot')
   .setExtras({ enableAzureLogin: false }, (definition, extras) =>
     createModule(definition, extras.enableAzureLogin))
   .build();
 
-class DeepSecModule extends ConfigurableModuleClass {
-  constructor(login) { super(); this.login = login; }
+@Module({})
+export class DeepSecModule implements NestModule {
+  constructor(private readonly login: AzureLoginService) {}
 
-  configure(consumer) {
+  configure(consumer: MiddlewareConsumer) {
     if (this.login.middleware) consumer.apply(...this.login.middlewares).forRoutes('{*path}');
   }
 
-  static forRoot(options) {
+  static forRoot<TRequest = any>(options: DeepSecOptions<TRequest>): DynamicModule {
     const enableAzureLogin = Boolean(options?.azureLogin);
     validateOptions(options, enableAzureLogin);
-    return super.forRoot({ ...options, enableAzureLogin });
+    return { ...ConfigurableModuleClass.forRoot({ ...options, enableAzureLogin }), module: this };
   }
 
-  static forRootAsync(options) {
+  static forRootAsync<TRequest = any>(options: DeepSecAsyncOptions<TRequest>): DynamicModule {
     if (typeof options?.useFactory !== 'function') {
       throw new TypeError('DeepSecModule.forRootAsync requires useFactory');
     }
     if (options.enableAzureLogin !== undefined && typeof options.enableAzureLogin !== 'boolean') {
       throw new TypeError('enableAzureLogin must be a boolean');
     }
-    return super.forRootAsync(options);
+    return { ...ConfigurableModuleClass.forRootAsync(options), module: this };
   }
 }
-Inject(AzureLoginService)(DeepSecModule, undefined, 0);
-Module({})(DeepSecModule);
-
-module.exports = {
-  DeepSecModule, DeepSecPublic, DEEPSEC_POOL, AzureLoginService,
-  mapBearerIdentity, mapSessionIdentity,
-  DEEPSEC_PUBLIC_ROUTE: PUBLIC_ROUTE,
-};

@@ -240,3 +240,21 @@ server-side session store. Logout calls `req.logOut` before destroying the sessi
 The app's serializer controls the persisted fields and token-expiry checks.
 No access token is included in the browser cookie. Existing authenticated apps
 should retain their own session middleware and serializer and omit built-in login.
+
+
+## Building and packaging
+
+The maintained implementation is TypeScript in `src/`. `npm run build` in this
+package generates JavaScript and declarations together in `dist/`; do not edit
+generated files. The demo's root `npm run build` builds the plugin before the app.
+
+Run `npm pack` in this package to build and create a tarball. Only compiled output,
+package metadata and documentation are packaged. Applications install that tarball
+(or a future published version) and use JavaScript directly; they do not need
+TypeScript or a plugin build step. There is no consumer install/prepare hook.
+Existing root and named subpath imports are preserved through package exports.
+
+`npm test` from the demo runs the offline integration suite and checks the packed
+artifact from JavaScript and TypeScript consumers. The consumer check validates
+generated declarations with library checking enabled and verifies invalid identity
+configuration is rejected by the type checker.
