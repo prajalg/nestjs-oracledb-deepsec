@@ -21,7 +21,7 @@ button:focus-visible, summary:focus-visible { outline: 3px solid #9cb98a; outlin
 .status[data-state=error] { color: #a44339; }
 .status[data-state=error]::before { background: #b85a50; }
 .empty { padding: 86px 24px; text-align: center; color: #8b9587; font-size: 14px; }
-.table-scroll { overflow-x: auto; }
+.table-scroll { overflow-x: auto; padding: 12px 16px; }
 table { width: 100%; border-collapse: collapse; text-align: left; }
 th { font-size: 10px; font-weight: 600; letter-spacing: .5px; color: #73816c; background: #fafbf8; padding: 16px 20px; }
 td { padding: 22px 20px; font-size: 13px; white-space: nowrap; border-top: 1px solid #edf0e9; }
