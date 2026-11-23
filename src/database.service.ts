@@ -4,7 +4,7 @@ import { DEEPSEC_POOL } from 'nestjs-oracledb-deepsec';
 import { performance } from 'node:perf_hooks';
 import { errorDetails } from 'nestjs-oracledb-deepsec/error-details';
 
-export const DEMO_QUERY = `SELECT employee_id, first_name, last_name
+export const DEMO_QUERY = `SELECT *
 FROM hr.employees
 ORDER BY employee_id
 FETCH FIRST 100 ROWS ONLY`;
