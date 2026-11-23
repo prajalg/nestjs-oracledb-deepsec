@@ -10,10 +10,8 @@ require('oracledb/plugins/token/endUserSecurityProvider');
 const contextProvider = oracledb.getSecurityContextProvider();
 const { DEEPSEC_POOL, PUBLIC_ROUTE, DeepSecPublic } = require('./tokens');
 const { AzureLoginService, AzureLoginController } = require('./azure-login');
-const IDENTITY_MAPPER = Symbol('DEEPSEC_IDENTITY_MAPPER');
 const OPTIONS = Symbol('DEEPSEC_OPTIONS');
 const RAW_OPTIONS = Symbol('DEEPSEC_RAW_OPTIONS');
-const ROUTE_POLICY = Symbol('DEEPSEC_ROUTE_POLICY');
 
 function snapshotIdentity(identity) {
   if (!identity || typeof identity.endUserToken !== 'string' || !identity.endUserToken.trim() ||
@@ -38,9 +36,11 @@ function snapshotIdentity(identity) {
 }
 
 class DeepSecInterceptor {
-  constructor(reflector, login, mapIdentity, isPublic) {
-    this.reflector = reflector; this.login = login; this.mapIdentity = mapIdentity;
-    this.isPublic = isPublic;
+  constructor(reflector, login, options) {
+    this.reflector = reflector;
+    this.login = login;
+    this.mapIdentity = options.mapIdentity;
+    this.isPublic = options.isPublic;
   }
 
   async intercept(context, next) {
@@ -80,8 +80,7 @@ class DeepSecInterceptor {
 Injectable()(DeepSecInterceptor);
 Inject(Reflector)(DeepSecInterceptor, undefined, 0);
 Inject(AzureLoginService)(DeepSecInterceptor, undefined, 1);
-Inject(IDENTITY_MAPPER)(DeepSecInterceptor, undefined, 2);
-Inject(ROUTE_POLICY)(DeepSecInterceptor, undefined, 3);
+Inject(OPTIONS)(DeepSecInterceptor, undefined, 2);
 
 class PoolLifecycle {
   constructor(pool, options) { this.pool = pool; this.ownsPool = options.poolOptions !== undefined; }
@@ -129,8 +128,6 @@ function createModule(definition, enableAzureLogin) {
       ...definition.providers,
       { provide: OPTIONS, inject: [RAW_OPTIONS],
         useFactory: options => validateOptions(options, enableAzureLogin) },
-      { provide: IDENTITY_MAPPER, inject: [OPTIONS], useFactory: config => config.mapIdentity ?? null },
-      { provide: ROUTE_POLICY, inject: [OPTIONS], useFactory: config => config.isPublic ?? null },
       { provide: AzureLoginService, inject: [OPTIONS],
         useFactory: config => new AzureLoginService(config.azureLogin) },
       { provide: DEEPSEC_POOL, inject: [OPTIONS],

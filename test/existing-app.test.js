@@ -163,7 +163,9 @@ test('route policy must explicitly return a boolean and cannot accidentally bypa
   const bridge = DeepSecModule.forRoot({ pool: { getConnection() {}, close() {} } });
   const Interceptor = bridge.providers.find(p => p.provide === APP_INTERCEPTOR).useClass;
   let handled = false;
-  const interceptor = new Interceptor(new Reflector(), {}, () => null, async () => 'true');
+  const interceptor = new Interceptor(new Reflector(), {}, {
+    mapIdentity: () => null, isPublic: async () => 'true',
+  });
   const context = { getType: () => 'http', getHandler: () => function handler() {},
     getClass: () => class Controller {} };
   await assert.rejects(interceptor.intercept(context, { handle() {

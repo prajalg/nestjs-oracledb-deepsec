@@ -191,7 +191,7 @@ test('mapped Observable subscriptions preserve context, errors and cancellation 
     attributes: { tenant: { id: 'original' } } };
   const interceptor = new Interceptor(new Reflector(), {
     tokenForRequest() { throw new Error('session must not be consulted'); },
-  }, () => identity);
+  }, { mapIdentity: () => identity });
   const context = { getType: () => 'http', getHandler: () => function handler() {},
     getClass: () => class Controller {}, switchToHttp: () => ({ getRequest: () => ({ headers: {} }) }) };
   let teardown = 0;
