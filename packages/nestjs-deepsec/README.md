@@ -215,8 +215,18 @@ Connection resolution remains available for apps with strictly request-scoped
 borrowing. Neither mode permits concurrent connection sharing between users.
 Keep borrowing/releasing within the request and awaiting its database work.
 No changes to query methods or the shared driver are needed to select operation
-resolution. Offline tests cover both modes, including token changes, SQL-error
-cleanup, and sequential identity isolation.
+resolution. The demo pins published `oracledb@26.0.0`; the adapter's driver peer
+range is `^26.0.0`. No local driver checkout is required. Offline tests cover both
+modes, SQL-error cleanup, identity isolation and token replacement when the token
+helper reports `isNewToken: true`.
+
+Published 26.0.0 has a separate cache limitation: within one async scope, if a DB
+token changes but the token helper reports `isNewToken: false` (a cache hit), the
+provider reuses the previous encoded EUSC. The desired-behavior regression test
+still runs as an explicit TODO/expected failure. This is not a passing guarantee
+of cached-token refresh correctness. Keep request scopes short; applications
+requiring that scenario need a driver release that fixes it. The adapter does not
+patch driver internals or silently change the configured resolution mode.
 
 An independent shared-driver cleanup defect remains: initial OBO failure can
 cause both execute and close to return NJS-198 before the underlying release

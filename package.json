@@ -8,9 +8,9 @@
   },
   "scripts": {
     "build": "npm run build:plugin && tsc -p tsconfig.json",
-    "start": "node --preserve-symlinks --env-file-if-exists=.env dist/main.js",
+    "start": "node --env-file-if-exists=.env dist/main.js",
     "dev": "npm run build && npm start",
-    "test": "npm run build && node --preserve-symlinks --test test/*.test.js",
+    "test": "npm run build && node --test test/*.test.js",
     "build:plugin": "npm --prefix packages/nestjs-deepsec run build"
   },
   "dependencies": {
@@ -24,7 +24,7 @@
     "memorystore": "1.6.8",
     "nestjs-cls": "7.0.2",
     "nestjs-oracledb-deepsec": "file:packages/nestjs-deepsec",
-    "oracledb": "file:../drivers/node-oracledb",
+    "oracledb": "26.0.0",
     "passport": "0.7.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

@@ -42,7 +42,7 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
       for (const name of ['azure-login', 'error-details', 'identity-mappers', 'tokens'])
         assert.ok(require('nestjs-oracledb-deepsec/' + name));
     `);
-    run(process.execPath, ['--preserve-symlinks', 'consumer.cjs']);
+    run(process.execPath, ['consumer.cjs']);
     writeFileSync(join(temporary, 'consumer.ts'), `
       import { DeepSecModule, mapBearerIdentity, mapSessionIdentity, type DeepSecOptions } from 'nestjs-oracledb-deepsec';
       import type { Pool } from 'oracledb';

@@ -43,7 +43,7 @@ The guard permits @DeepSecPublic() health/login routes, requires Passport's rest
 
 ## Local driver and tests
 
-The demo links `../drivers/node-oracledb`, because the previous published 6.10.0 package lacks the DeepSec APIs. The portable package itself uses peer dependencies. --preserve-symlinks keeps the app, adapter and driver on the same driver instance and allows the driver plugin to resolve app-installed MSAL. The earlier nestjs-deepsec project is not a runtime dependency.
+The demo installs the published `oracledb@26.0.0` release, verified as latest in the configured npm registry when this change was made. It includes the DeepSec provider and operation-level context APIs. The adapter accepts `oracledb` as a peer dependency (`^26.0.0`), so app and adapter share the installed driver. No local driver checkout or `--preserve-symlinks` flag is required. The earlier nestjs-deepsec project is not a runtime dependency.
 
 ```sh
 npm test
@@ -236,3 +236,8 @@ the shared driver remains documented and unchanged.
 The plugin is maintained in TypeScript. Root `npm run build` compiles it before
 the demo; `npm pack` inside its directory builds a tarball containing JavaScript
 and generated declarations. Consumers of the tarball need no plugin build step.
+
+Published driver verification: the offline suite exercises `oracledb@26.0.0`.
+The changed-cached-token EUSC regression is an explicit TODO/expected failure;
+the provider-failure cleanup defect also remains reproducible in both modes.
+See the package README for these limits. No shared-driver files are modified.

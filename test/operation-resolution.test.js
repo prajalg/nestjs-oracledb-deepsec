@@ -8,7 +8,7 @@ const azure = require('oracledb/plugins/token/extensionAzure');
 const ThinConnectionImpl = require(join(dirname(require.resolve('oracledb')), 'lib/thin/connection.js'));
 const contextProvider = oracledb.getSecurityContextProvider();
 
-// Component integration with the linked driver: real Connection.execute()/close()
+// Component integration with the published driver: real Connection.execute()/close()
 // wrappers, serialization lock, provider, EUSC construction and Thin set/clear.
 // Only the Azure exchange and database/protocol I/O are stubbed. Test-only access
 // to driver internals does not establish real TLS negotiation or DB enforcement.
@@ -89,10 +89,29 @@ test('operation mode resolves each execute and clears EUSC before returning to t
   assert.equal(contextProvider.getCurrentContext(), null);
 });
 
-test('operation mode replaces EUSC if the token extension returns a refreshed cached DB token', async t => {
+test('operation mode replaces EUSC if the token extension returns a refreshed cached DB token', {
+  todo: 'Published oracledb 26.0.0 reuses EUSC when a changed DB token is marked as a cache hit',
+}, async t => {
   const f = await fixture(t, { exchange: (_request, count) => ({
     accessToken: count === 1 ? 'fixture-old-db-token' : 'fixture-refreshed-db-token',
     isNewToken: false,
+  }) });
+  const connection = f.borrow();
+  await contextProvider.runWithContext({ endUserToken: 'user-a' }, async () => {
+    await connection.execute('first');
+    await connection.execute('second');
+    await connection.execute('third');
+    assert.notEqual(f.installed[0], f.installed[1]);
+    assert.equal(f.installed[1], f.installed[2]);
+    assert.equal(f.impl.securityContext, null);
+    await connection.close();
+  });
+});
+
+test('operation mode replaces EUSC when the token helper reports a newly acquired DB token', async t => {
+  const f = await fixture(t, { exchange: (_request, count) => ({
+    accessToken: count === 1 ? 'fixture-old-db-token' : 'fixture-new-db-token',
+    isNewToken: count <= 2,
   }) });
   const connection = f.borrow();
   await contextProvider.runWithContext({ endUserToken: 'user-a' }, async () => {
