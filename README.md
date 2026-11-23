@@ -241,3 +241,11 @@ Published driver verification: the offline suite exercises `oracledb@26.0.0`.
 The changed-cached-token EUSC regression is an explicit TODO/expected failure;
 the provider-failure cleanup defect also remains reproducible in both modes.
 See the package README for these limits. No shared-driver files are modified.
+
+The current demo query reads `EMPLOYEE_ID`, `FIRST_NAME` and `LAST_NAME` from
+`HR.EMPLOYEES`, ordered by employee ID and limited to 100 rows. Click **Load
+employees** after sign-in. Oracle applies the configured DeepSec policies; zero
+rows can mean this identity sees no employees. Table/column grants and policies
+remain database configuration, and errors are shown in the UI. The plugin is
+unchanged; only the demo SQL and presentation changed. Historical `dual` query
+results above describe earlier checks, not this employee query's live validation.

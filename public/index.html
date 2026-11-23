@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Oracle Demo</title>
+  <title>Employees · Oracle Demo</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
   <main>
     <header>
-      <div><p class="eyebrow">NestJS + Oracle</p><h1>Database demo</h1></div>
+      <div><p class="eyebrow">NestJS + Oracle</p><h1>Employees</h1></div>
       <span class="status" id="status">Not connected</span>
     </header>
-    <section class="card" aria-label="Database query">
+    <section class="card" aria-label="Employee query">
       <div class="auth-bar">
         <span id="account">Not signed in</span>
         <button id="login" class="secondary" disabled>Sign in with Azure</button>
@@ -27,12 +27,12 @@
           <summary>View SQL</summary>
           <pre><code id="sql">Loading…</code></pre>
         </details>
-        <button id="run" disabled>Run query</button>
+        <button id="run" disabled>Load employees</button>
       </div>
-      <div id="empty" class="empty">No results yet.</div>
+      <div id="empty" class="empty">No employees loaded.</div>
       <div id="error" class="error" role="alert" hidden></div>
       <div id="results" hidden>
-        <div class="table-scroll"><table aria-label="Query results"><thead id="columns"></thead><tbody id="rows"></tbody></table></div>
+        <div class="table-scroll"><table aria-label="Employees"><thead id="columns"></thead><tbody id="rows"></tbody></table></div>
         <div class="meta"><span><span id="count"></span> row(s)</span><span id="duration"></span></div>
       </div>
     </section>

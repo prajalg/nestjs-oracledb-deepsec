@@ -4,10 +4,10 @@ import { DEEPSEC_POOL } from 'nestjs-oracledb-deepsec';
 import { performance } from 'node:perf_hooks';
 import { errorDetails } from 'nestjs-oracledb-deepsec/error-details';
 
-export const DEMO_QUERY = `SELECT SYS_CONTEXT('USERENV', 'SESSION_USER') AS DB_USER,
-       SYS_CONTEXT('USERENV', 'DB_NAME') AS DB_NAME,
-       TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD HH24:MI:SS TZH:TZM') AS SERVER_TIME
-FROM dual`;
+export const DEMO_QUERY = `SELECT employee_id, first_name, last_name
+FROM hr.employees
+ORDER BY employee_id
+FETCH FIRST 100 ROWS ONLY`;
 
 @Injectable()
 export class DatabaseService {

@@ -2,21 +2,23 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { DatabaseService, DEMO_QUERY } = require('../dist/database.service');
 
-test('executes the fixed query and releases the borrowed connection', async () => {
+test('returns employee rows and releases the borrowed connection', async () => {
   let closed = 0;
   const service = new DatabaseService();
   service.pool = { getConnection: async () => ({
     execute: async (sql, binds) => {
       assert.equal(sql, DEMO_QUERY);
       assert.deepEqual(binds, []);
-      return { metaData: [{ name: 'DB_USER' }], rows: [{ DB_USER: 'SCOTT' }] };
+      return { metaData: [{ name: 'EMPLOYEE_ID' }, { name: 'FIRST_NAME' }, { name: 'LAST_NAME' }],
+        rows: [{ EMPLOYEE_ID: 100, FIRST_NAME: 'Fixture', LAST_NAME: 'Employee' }] };
     },
     close: async () => { closed++; },
     oracleServerVersionString: '26.1.0.0.0',
   }) };
   const result = await service.runQuery();
   assert.equal(result.connected, true);
-  assert.deepEqual(result.rows, [{ DB_USER: 'SCOTT' }]);
+  assert.deepEqual(result.rows, [{ EMPLOYEE_ID: 100, FIRST_NAME: 'Fixture', LAST_NAME: 'Employee' }]);
+  assert.deepEqual(result.columns, ['EMPLOYEE_ID', 'FIRST_NAME', 'LAST_NAME']);
   assert.equal(closed, 1);
 });
 

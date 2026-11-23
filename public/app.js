@@ -29,7 +29,7 @@ button.addEventListener('click', async () => {
   $('results').hidden = true;
   $('empty').hidden = true;
   $('error').hidden = true;
-  status('Running query…');
+  status('Loading employees…');
   try {
     const response = await fetch('/api/query');
     if (response.status === 401) {
@@ -58,14 +58,14 @@ button.addEventListener('click', async () => {
       return tr;
     }));
     $('results').hidden = false;
-    status('Connected', 'success');
+    status(data.rows.length ? 'Employees loaded' : 'No employees visible', 'success');
   } catch (error) {
     $('error').textContent = error.message;
     $('error').hidden = false;
     status('Connection failed', 'error');
   } finally {
     button.disabled = !signedIn;
-    button.textContent = 'Run query';
+    button.textContent = 'Load employees';
   }
 });
 let signedIn = false;
