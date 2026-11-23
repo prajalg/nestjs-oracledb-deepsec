@@ -1,108 +1,182 @@
 # NestJS DeepSec adapter
 
-A small portable bridge to node-oracledb's endUserSecurityProvider, with optional Azure user sign-in for apps that do not already obtain user tokens.
+A small bridge from an application's authenticated identity to node-oracledb's
+shared `endUserSecurityProvider`. Configure one mapper; controllers, services and
+SQL keep using normal `getConnection()`, `execute()` and `close()` calls.
+
+## Existing application: keep authentication, CLS and pool injection
+
+If your app already has authentication and `nestjs-cls`, keep them. Add the
+adapter import to the module that can access your existing pool provider:
 
 ```ts
-@Module({
-  imports: [DeepSecModule.forRoot({
-    azureLogin: {                    // optional: omit for existing bearer-token apps
-      clientId: userLoginClientId,   // public client with device-code flow enabled
-      authority: tenantAuthority,
-      scopes: [middleTierUserScope],
-      // networkClient,             // optional corporate-proxy MSAL client
-      // secureCookie: false,       // local HTTP development only; defaults to true
+DeepSecModule.forRootAsync({
+  imports: [DatabaseModule], // exports your existing ORACLE_POOL provider
+  inject: [ORACLE_POOL, ClsService, Reflector],
+  useFactory: (pool, cls, reflector) => ({
+    pool,
+    // Reuse the same metadata key as your existing authentication guard.
+    isPublic: context => reflector.getAllAndOverride(IS_PUBLIC_KEY,
+      [context.getHandler(), context.getClass()]) === true,
+    mapIdentity: () => {
+      const user = cls.get('user'); // established by your authentication integration
+      return user ? {
+        endUserToken: user.accessToken,
+        dataRoles: user.oracleRoles,
+        attributes: user.oracleAttributes,
+      } : null;
     },
-    poolOptions: {
-      user, password, connectString,
-      endUserSecParams: {
-        spiType: 'azure', authFlow: 'onBehalfOf',
-        clientId: middleTierClientId,
-        clientSecret: middleTierClientSecret,
-        authority: tenantAuthority,
-        scopes: [databaseResourceScope],
-      },
-    },
-  })],
-  providers: [DatabaseService],
-})
-export class AppModule {}
-
-@Injectable()
-export class DatabaseService {
-  constructor(@Inject(DEEPSEC_POOL) private readonly pool: oracledb.Pool) {}
-  // Existing getConnection()/execute()/close() code stays unchanged.
-}
-```
-
-## Identity sources
-
-1. Existing app authentication: configure `mapIdentity` to read the identity established by your authentication guard (see below).
-2. Direct bearer forwarding: omit `azureLogin` and send Authorization: Bearer <user-token>. This is not local HTTP authentication; Azure validates the token when OBO runs.
-3. Plugin-owned authentication: configure azureLogin and use the endpoints below. The plugin stores the resulting user token in server memory, associates it with an opaque HttpOnly SameSite=Strict cookie, and resolves that identity for subsequent requests. The browser never receives an access token.
-
-For all identity sources the interceptor calls the shared driver's runWithContext({ endUserToken }, ...). The driver plugin performs Azure OBO exchange to obtain the **database** token and constructs the Oracle security context. Sign-in does not replace that database-token exchange.
-
-## Optional login endpoints
-
-- POST /deepsec/auth/start: sets a pending session cookie and returns verificationUri, userCode, expiresIn. Show the link and code to the user.
-- GET /deepsec/auth/status: returns signedOut, pending, authenticated, or failed, plus username after sign-in. Pending status includes the device code so a page reload can resume the flow.
-- POST /deepsec/auth/logout: cancels pending sign-in or deletes the local authenticated session and clears its cookie. This is local logout, not a Microsoft-wide sign-out.
-
-Use same-origin requests. Login/logout reject cross-origin requests. Auth responses use no-store. Other Nest HTTP routes require a mapped identity or a supplied bearer/session token unless explicitly marked @DeepSecPublic(); public handlers must not run protected database work. Static assets are served separately by Express. An explicit malformed Authorization header is rejected even if a valid session cookie exists.
-
-## First implementation limits
-
-This checkpoint supports one configured pool and HTTP/Azure OBO. Device code is the built-in sign-in flow; it does not require a callback URL. Sessions are process-local, bounded to 100 entries, expire no later than token expiry minus 30 seconds or one hour, and are cleared on restart/shutdown. Pending login expires within ten minutes. There is no automatic renewal yet: sign in again after expiry. Multiple app processes need a shared session-store implementation before this session feature can be used across replicas. Background jobs and other transports need their own explicit scopes.
-
-NestJS, RxJS and oracledb are peers so the adapter shares the consumer's driver instance. @azure/msal-node is an optional peer for built-in login (the Azure driver extension also needs MSAL for OBO). No SQL, credentials, proxy URLs or app-specific Azure settings are hardcoded in this package. Token validity is determined by Azure and Oracle, not by bearer-header syntax checking.
-
-## Existing authentication: map validated identity
-
-For an app that already authenticates requests, configure `mapIdentity` once.
-Your authentication guard must validate the request before the interceptor runs.
-The adapter does not validate JWT signatures or replace your authentication guard.
-
-```ts
-DeepSecModule.forRoot({
-  poolOptions, // configured with the driver's endUserSecParams, as above
-  mapIdentity: request => {
-    // Set by your app's authentication guard; these field names are app-specific.
-    const user = request.user;
-    if (!user) return null;
-    return {
-      endUserToken: user.accessToken,
-      dataRoles: user.oracleRoles,
-      attributes: user.oracleAttributes,
-    };
-  },
+  }),
 });
 ```
 
-The mapper may be asynchronous and receives `(request, executionContext)`. It must
-return a nonempty end-user access token and may return `dataRoles` (string array)
-and `attributes` (JSON object). Map roles and attributes only from trusted policy,
-never directly from unvalidated request fields. Passport does not automatically
-retain the raw access token on `req.user`: configure your strategy or server-side
-token store to make the Azure token available. A local app session token is not
-necessarily a valid Azure OBO assertion.
+`DatabaseModule`, `ORACLE_POOL`, `IS_PUBLIC_KEY` and user field names are app-specific.
+Import `DeepSecModule` from `nestjs-oracledb-deepsec`, `ClsService` from `nestjs-cls`
+and `Reflector` from `@nestjs/core`. Initialize CLS once in the app; do not repeat
+`ClsModule.forRoot()` if it is already configured.
 
-When a mapper is configured it is the only identity source. Missing or malformed
-mapped identity returns 401 before the handler; neither a bearer header nor a
-built-in login session provides a fallback. `@DeepSecPublic()` bypasses mapping.
-Only token, roles and attributes are forwarded, with copied role/attribute values
-so mutation of the source user object cannot change an established scope.
+Your existing pool provider and service injection token stay unchanged. The adapter
+returns that same pool through its optional `DEEPSEC_POOL` alias and never closes
+an application-owned pool. Keep its existing shutdown owner.
 
-Without a mapper, existing bearer forwarding and optional device login remain
-compatible. Bearer forwarding checks syntax only; Azure validates the assertion
-at OBO time. It must not be treated as application-level authentication.
+**The existing pool must already be configured for DeepSec.** Register
+`oracledb/plugins/token/endUserSecurityProvider` before creating it and add
+`endUserSecParams` to its creation options. This adapter does not retrofit an
+already-created ordinary pool or inspect/patch its private provider fields.
+Mapping metadata into async context alone does not enable database enforcement.
+Restart/recreate the pool after changing its creation configuration.
 
-The interceptor subscribes to Nest's handler inside the driver's context, and
-returns the subscription for cancellation/error teardown. No additional CLS
-store or driver API is needed. This does not automatically scope background jobs,
-external callbacks or streams consumed after the handler subscription completes.
-Those require explicit context/resource lifecycle integration.
+For the Azure OBO demo, `endUserSecParams` contains:
 
-This checkpoint still creates one pool and exports `DEEPSEC_POOL`. Existing-pool
-integration and operation-resolution lifecycle tests are subsequent work. The demo
-keeps connection resolution and borrows/releases within each query; never share a
-borrowed connection concurrently across users.
+```ts
+{
+  spiType: 'azure',
+  authFlow: 'onBehalfOf',
+  contextResolution: 'connection',
+  clientId: middleTierClientId,
+  clientSecret: middleTierClientSecret,
+  authority: tenantAuthority,
+  scopes: [databaseResourceScope],
+}
+```
+
+No demo authentication guard, Azure device login, UI or new route decorators are
+required for an app that already establishes the identity. If existing auth sets
+only `request.user`, omit CLS and read that object in `mapIdentity(request)`.
+Passport does not automatically retain the Azure access token; your auth/token
+store must make a suitable middle-tier access token available. An app's own session
+JWT is not necessarily an Azure OBO assertion.
+
+## Pool creation managed by the adapter
+
+Apps without a pool provider can supply `poolOptions` instead of `pool`:
+
+```ts
+DeepSecModule.forRoot({
+  poolOptions: {
+    user, password, connectString,
+    endUserSecParams: { /* driver configuration as above */ },
+  },
+  mapIdentity: request => request.user ? {
+    endUserToken: request.user.accessToken,
+  } : null,
+});
+```
+
+Inject `DEEPSEC_POOL` in this mode. The adapter creates the pool and closes it on
+application shutdown. Exactly one of `pool` or `poolOptions` is required. Both
+`forRoot` and `forRootAsync` support either source. Only one configured pool per
+module integration is currently supported.
+
+## Identity mapping and route policy
+
+The HTTP interceptor runs after authentication guards. It invokes
+`mapIdentity(request, executionContext)` once per protected request; the callback
+may be asynchronous and can read injected CLS or other request-local services.
+With `forRootAsync`, the configuration factory runs once at startup, so return a
+callback that reads identity later; do not capture a current user at startup.
+`imports`, `inject` and a sync/async `useFactory` are supported.
+
+A mapped identity requires a nonempty `endUserToken`; optional `dataRoles` is a
+string array and `attributes` is a JSON object. Use only authenticated identity
+and trusted application policy. The adapter checks shape and copies roles and
+attributes into the request scope. It does not validate JWT signatures or replace
+your authentication guard. Missing/malformed identity returns 401 before the
+handler. When a mapper is configured, bearer headers and built-in login sessions
+cannot provide a fallback.
+
+Without a mapper, direct bearer forwarding and optional built-in session lookup
+remain compatible. Bearer forwarding checks header syntax only; Azure validates
+the assertion during OBO. This is not application-level HTTP authentication.
+
+`isPublic(executionContext)` reuses your app's existing public-route policy. It
+must return an explicit boolean (sync or async). Without it, all HTTP handlers
+require identity unless marked `@DeepSecPublic()`. That marker remains an explicit
+bypass even with a custom policy; `DEEPSEC_PUBLIC_ROUTE` exports its metadata key.
+Keep the app's auth guard and adapter policies consistent. Public handlers must
+not execute protected database work: skipping DeepSec does not itself prohibit
+ordinary database access outside a scope. Route policies are application-controlled,
+not derived from an unvalidated user header or missing identity.
+
+## Optional Azure device login
+
+Existing authenticated apps do not configure this. For the included demo, add
+`azureLogin` options; async configuration must also opt in to registering routes:
+
+```ts
+DeepSecModule.forRootAsync({
+  enableAzureLogin: true,
+  inject: [ClsService],
+  useFactory: cls => ({
+    poolOptions,
+    azureLogin: {
+      clientId: userLoginClientId,
+      authority: tenantAuthority,
+      scopes: [middleTierUserScope],
+      // networkClient,       // optional corporate-proxy MSAL client
+      // secureCookie: false, // local HTTP development only; default is true
+    },
+    mapIdentity: () => mapDemoIdentity(cls),
+  }),
+});
+```
+
+For synchronous `forRoot`, supplying `azureLogin` is the opt-in. Without opt-in,
+none of `/deepsec/auth/start`, `/status` or `/logout` is registered. A mismatch
+between async opt-in and resolved login configuration fails at startup.
+
+When enabled, endpoints are:
+
+- `POST /deepsec/auth/start`: starts device login, returning Microsoft's verification
+  URL/user code and setting an opaque HttpOnly SameSite=Strict cookie.
+- `GET /deepsec/auth/status`: reports signedOut, pending, authenticated or failed;
+  pending status includes the device code, authenticated status includes username.
+- `POST /deepsec/auth/logout`: cancels login/deletes the local session and clears
+  its cookie; this is not Microsoft-wide sign-out.
+
+Tokens remain server-side. Auth responses use no-store; start/logout reject
+cross-origin requests. The app can inject exported `AzureLoginService` and call
+`tokenForRequest(request)` in its guard. It returns a token only for a nonexpired,
+authenticated session. Never return or log it. The demo's guard stores that identity
+in CLS; another app can keep its own guard. MSAL is an optional peer for this login
+feature (the driver's Azure extension also needs MSAL for OBO).
+
+Sessions are bounded to 100 process-local entries, expire before token expiry
+minus 30 seconds or after an hour, and clear on restart. Pending login expires
+within ten minutes. No automatic renewal/shared store is implemented.
+
+## Context propagation and limits
+
+The interceptor subscribes to Nest's handler inside the driver's `runWithContext`
+scope and returns the subscription for error/cancellation teardown. The driver
+handles OBO and EUSC construction/installation. CLS holds application identity;
+the adapter does not create a second app CLS store or require CLS as a dependency.
+
+The demo borrows/releases a connection inside each query with connection-level
+resolution. Do not share borrowed connections concurrently between users.
+Operation resolution is supported by configuration but broader lifecycle coverage
+remains future work. Background jobs, non-HTTP transports and streams consumed
+after the handler subscription need explicit scope/resource integration.
+
+NestJS, RxJS and oracledb are peers so the app and adapter share the driver instance.
+No SQL, app credentials or corporate proxy addresses are hardcoded in the package.

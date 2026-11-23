@@ -2,7 +2,7 @@
 const { randomBytes } = require('node:crypto');
 const {
   Controller, Get, Post, Req, Res, Inject, Header,
-  ForbiddenException, HttpException, ServiceUnavailableException,
+  ForbiddenException, HttpException, ServiceUnavailableException, NotFoundException,
 } = require('@nestjs/common');
 const { DeepSecPublic } = require('./tokens');
 const COOKIE = 'deepsec_session';
@@ -65,6 +65,7 @@ class AzureLoginService {
   }
 
   async start(request, response) {
+    if (!this.options) throw new NotFoundException();
     this.assertSameOrigin(request);
     this.sweep();
     this.forget(this.sessionId(request));
@@ -137,6 +138,7 @@ class AzureLoginService {
   }
 
   logout(request, response) {
+    if (!this.options) throw new NotFoundException();
     this.assertSameOrigin(request);
     this.forget(this.sessionId(request));
     response.clearCookie(COOKIE, this.cookieOptions());

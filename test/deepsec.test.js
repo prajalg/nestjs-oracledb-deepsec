@@ -24,7 +24,7 @@ const options = {
 test('pool creation installs the real shared driver provider without opening a connection', async () => {
   const dynamicModule = DeepSecModule.forRoot(options);
   const poolProvider = dynamicModule.providers.find(provider => provider.provide === DEEPSEC_POOL);
-  const pool = await poolProvider.useFactory();
+  const pool = await poolProvider.useFactory(options);
   try {
     // This assertion deliberately checks the driver hook's installation only.
     // It does not prove Azure exchange or database enforcement.

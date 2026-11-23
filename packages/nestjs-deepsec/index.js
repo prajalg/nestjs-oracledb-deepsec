@@ -11,6 +11,8 @@ const contextProvider = oracledb.getSecurityContextProvider();
 const { DEEPSEC_POOL, PUBLIC_ROUTE, DeepSecPublic } = require('./tokens');
 const { AzureLoginService, AzureLoginController } = require('./azure-login');
 const IDENTITY_MAPPER = Symbol('DEEPSEC_IDENTITY_MAPPER');
+const OPTIONS = Symbol('DEEPSEC_OPTIONS');
+const ROUTE_POLICY = Symbol('DEEPSEC_ROUTE_POLICY');
 
 function snapshotIdentity(identity) {
   if (!identity || typeof identity.endUserToken !== 'string' || !identity.endUserToken.trim() ||
@@ -35,16 +37,21 @@ function snapshotIdentity(identity) {
 }
 
 class DeepSecInterceptor {
-  constructor(reflector, login, mapIdentity) {
+  constructor(reflector, login, mapIdentity, isPublic) {
     this.reflector = reflector; this.login = login; this.mapIdentity = mapIdentity;
+    this.isPublic = isPublic;
   }
 
   async intercept(context, next) {
     if (context.getType() !== 'http') return next.handle();
-    const isPublic = this.reflector.getAllAndOverride(PUBLIC_ROUTE, [
+    let isPublic = this.reflector.getAllAndOverride(PUBLIC_ROUTE, [
       context.getHandler(), context.getClass(),
     ]);
-    if (isPublic) return next.handle();
+    if (isPublic !== true && this.isPublic) {
+      isPublic = await this.isPublic(context);
+      if (typeof isPublic !== 'boolean') throw new TypeError('isPublic must return a boolean');
+    }
+    if (isPublic === true) return next.handle();
 
     const request = context.switchToHttp().getRequest();
     let metadata;
@@ -73,39 +80,93 @@ Injectable()(DeepSecInterceptor);
 Inject(Reflector)(DeepSecInterceptor, undefined, 0);
 Inject(AzureLoginService)(DeepSecInterceptor, undefined, 1);
 Inject(IDENTITY_MAPPER)(DeepSecInterceptor, undefined, 2);
+Inject(ROUTE_POLICY)(DeepSecInterceptor, undefined, 3);
 
 class PoolLifecycle {
-  constructor(pool) { this.pool = pool; }
-  async onApplicationShutdown() { await this.pool.close(10); }
+  constructor(pool, options) { this.pool = pool; this.ownsPool = options.poolOptions !== undefined; }
+  async onApplicationShutdown() {
+    // A borrowed application pool keeps its existing owner and shutdown lifecycle.
+    if (this.ownsPool) await this.pool.close(10);
+  }
 }
 Injectable()(PoolLifecycle);
 Inject(DEEPSEC_POOL)(PoolLifecycle, undefined, 0);
+Inject(OPTIONS)(PoolLifecycle, undefined, 1);
+
+function validateOptions(options, enableAzureLogin) {
+  const hasPool = options?.pool !== undefined;
+  const hasPoolOptions = options?.poolOptions !== undefined;
+  if (hasPool === hasPoolOptions) {
+    throw new TypeError('DeepSecModule requires exactly one of pool or poolOptions');
+  }
+  if (hasPool && (!options.pool || typeof options.pool.getConnection !== 'function' ||
+      typeof options.pool.close !== 'function')) {
+    throw new TypeError('DeepSecModule pool must be an existing configured Oracle pool');
+  }
+  if (hasPoolOptions && !options.poolOptions?.endUserSecParams) {
+    throw new TypeError('DeepSecModule requires poolOptions.endUserSecParams');
+  }
+  for (const key of ['mapIdentity', 'isPublic']) {
+    if (options[key] !== undefined && typeof options[key] !== 'function') {
+      throw new TypeError(`DeepSecModule ${key} must be a function`);
+    }
+  }
+  if (options.azureLogin && !enableAzureLogin) {
+    throw new TypeError('Set enableAzureLogin: true in forRootAsync to register Azure login routes');
+  }
+  if (enableAzureLogin && !options.azureLogin) {
+    throw new TypeError('Azure login routes require azureLogin configuration');
+  }
+  return options;
+}
+
+function createModule(optionsProvider, imports, enableAzureLogin) {
+  return {
+    module: DeepSecModule,
+    imports,
+    controllers: enableAzureLogin ? [AzureLoginController] : [],
+    providers: [
+      optionsProvider,
+      { provide: IDENTITY_MAPPER, inject: [OPTIONS], useFactory: config => config.mapIdentity ?? null },
+      { provide: ROUTE_POLICY, inject: [OPTIONS], useFactory: config => config.isPublic ?? null },
+      { provide: AzureLoginService, inject: [OPTIONS],
+        useFactory: config => new AzureLoginService(config.azureLogin) },
+      { provide: DEEPSEC_POOL, inject: [OPTIONS],
+        useFactory: config => config.pool ?? oracledb.createPool(config.poolOptions) },
+      PoolLifecycle,
+      { provide: APP_INTERCEPTOR, useClass: DeepSecInterceptor },
+    ],
+    exports: [DEEPSEC_POOL, AzureLoginService],
+  };
+}
 
 class DeepSecModule {
   static forRoot(options) {
-    if (!options?.poolOptions?.endUserSecParams) {
-      throw new TypeError('DeepSecModule requires poolOptions.endUserSecParams');
+    const enableAzureLogin = Boolean(options?.azureLogin);
+    return createModule({ provide: OPTIONS, useValue: validateOptions(options, enableAzureLogin) },
+      [], enableAzureLogin);
+  }
+
+  // Services resolve once, while mapping and route callbacks run per request.
+  static forRootAsync(options) {
+    if (typeof options?.useFactory !== 'function') {
+      throw new TypeError('DeepSecModule.forRootAsync requires useFactory');
     }
-    if (options.mapIdentity !== undefined && typeof options.mapIdentity !== 'function') {
-      throw new TypeError('DeepSecModule mapIdentity must be a function');
+    if (options.enableAzureLogin !== undefined && typeof options.enableAzureLogin !== 'boolean') {
+      throw new TypeError('enableAzureLogin must be a boolean');
     }
-    return {
-      module: DeepSecModule,
-      controllers: options.azureLogin ? [AzureLoginController] : [],
-      providers: [
-        { provide: IDENTITY_MAPPER, useValue: options.mapIdentity ?? null },
-        { provide: AzureLoginService, useFactory: () => new AzureLoginService(options.azureLogin) },
-        {
-          provide: DEEPSEC_POOL,
-          useFactory: () => oracledb.createPool(options.poolOptions),
-        },
-        PoolLifecycle,
-        { provide: APP_INTERCEPTOR, useClass: DeepSecInterceptor },
-      ],
-      exports: [DEEPSEC_POOL],
-    };
+    const enableAzureLogin = options.enableAzureLogin === true;
+    return createModule({
+      provide: OPTIONS,
+      inject: options.inject || [],
+      useFactory: async (...dependencies) =>
+        validateOptions(await options.useFactory(...dependencies), enableAzureLogin),
+    }, options.imports || [], enableAzureLogin);
   }
 }
 Module({})(DeepSecModule);
 
-module.exports = { DeepSecModule, DeepSecPublic, DEEPSEC_POOL };
+module.exports = {
+  DeepSecModule, DeepSecPublic, DEEPSEC_POOL, AzureLoginService,
+  DEEPSEC_PUBLIC_ROUTE: PUBLIC_ROUTE,
+};

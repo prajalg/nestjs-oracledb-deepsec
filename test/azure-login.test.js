@@ -1,12 +1,15 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { Module } = require('@nestjs/common');
-const { NestFactory } = require('@nestjs/core');
+const { ClsModule, ClsService } = require('nestjs-cls');
+const { setTimeout: delay } = require('node:timers/promises');
+const { NestFactory, APP_GUARD } = require('@nestjs/core');
 const oracledb = require('oracledb');
 const { DeepSecModule, DEEPSEC_POOL } = require('nestjs-oracledb-deepsec');
 const { AzureLoginService } = require('nestjs-oracledb-deepsec/azure-login');
 const { AppController } = require('../dist/app.controller');
 const { DatabaseService } = require('../dist/database.service');
+const { AzureSessionGuard, mapDemoIdentity } = require('../dist/azure-session.guard');
 
 const loginOptions = {
   clientId: 'test-public-client', authority: 'https://login.microsoftonline.com/test',
@@ -32,13 +35,20 @@ function result(token, username = 'test-user') {
 }
 async function flush() { await new Promise(resolve => setImmediate(resolve)); }
 
-async function createApp(login) {
+async function createApp(login, azureLogin = loginOptions) {
   const observed = [];
+  let cls;
   const pool = {
     async getConnection() {
       return {
         async execute() {
-          observed.push(oracledb.getSecurityContextProvider().getCurrentContext()?.endUserToken);
+          const metadata = oracledb.getSecurityContextProvider().getCurrentContext();
+          const user = cls.get('user');
+          assert.equal(user.accessToken, metadata.endUserToken);
+          await delay(user.accessToken.endsWith('-a') ? 15 : 1);
+          assert.equal(cls.get('user'), user, 'CLS identity survives asynchronous execution');
+          assert.equal(oracledb.getSecurityContextProvider().getCurrentContext(), metadata);
+          observed.push(metadata.endUserToken);
           return { metaData: [{ name: 'DB_USER' }], rows: [{ DB_USER: 'XS$NULL' }] };
         },
         async close() {}, oracleServerVersionString: 'test',
@@ -46,9 +56,14 @@ async function createApp(login) {
     },
     async close() {},
   };
-  const bridge = DeepSecModule.forRoot({
-    azureLogin: loginOptions,
-    poolOptions: { endUserSecParams: { spiType: 'azure', authFlow: 'onBehalfOf' } },
+  const bridge = DeepSecModule.forRootAsync({
+    enableAzureLogin: Boolean(azureLogin),
+    inject: [ClsService],
+    useFactory: async cls => ({
+      azureLogin,
+      mapIdentity: () => mapDemoIdentity(cls),
+      poolOptions: { endUserSecParams: { spiType: 'azure', authFlow: 'onBehalfOf' } },
+    }),
   });
   bridge.providers = bridge.providers.map(provider => {
     if (provider.provide === DEEPSEC_POOL) return { provide: DEEPSEC_POOL, useValue: pool };
@@ -56,16 +71,25 @@ async function createApp(login) {
     return provider;
   });
   class TestModule {}
-  Module({ imports: [bridge], controllers: [AppController], providers: [DatabaseService] })(TestModule);
+  Module({ imports: [ClsModule.forRoot({ global: true, middleware: { mount: true } }), bridge],
+    controllers: [AppController], providers: [DatabaseService,
+    { provide: APP_GUARD, useClass: AzureSessionGuard }] })(TestModule);
   const app = await NestFactory.create(TestModule, { logger: false });
   await app.listen(0, '127.0.0.1');
-  return { app, base: await app.getUrl(), observed };
+  cls = app.get(ClsService);
+  return { app, base: await app.getUrl(), observed, cls };
 }
 
-test('plugin login keeps tokens server-side and supplies isolated cookie identities to unchanged SQL', async () => {
+test('CLS middleware, session guard and injected mapper isolate identities through asynchronous SQL', async () => {
   const { service, pending } = fakeAzure();
-  const { app, base, observed } = await createApp(service);
+  const { app, base, observed, cls } = await createApp(service);
   try {
+    assert.equal((await fetch(`${base}/api/health`)).status, 200);
+    for (const headers of [{}, { Cookie: 'deepsec_session=' + '0'.repeat(64) },
+      { Authorization: 'Bearer unvalidated-token' }]) {
+      assert.equal((await fetch(`${base}/api/query`, { headers })).status, 401);
+    }
+    assert.equal(observed.length, 0);
     const cookies = [];
     for (let index = 0; index < 2; index++) {
       const start = await fetch(`${base}/deepsec/auth/start`, { method: 'POST' });
@@ -86,6 +110,9 @@ test('plugin login keeps tokens server-side and supplies isolated cookie identit
       assert.equal(pendingBody.state, 'pending');
       assert.equal(pendingBody.deviceCode.userCode, 'TEST-CODE');
       assert.equal(pendingBody.accessToken, undefined);
+      assert.equal((await fetch(`${base}/api/query`, {
+        headers: { Cookie: cookies[index] },
+      })).status, 401, 'pending sessions must not reach the handler');
     }
     assert.notEqual(cookies[0], cookies[1]);
     // Complete in reverse order to catch accidentally shared login state.
@@ -98,15 +125,24 @@ test('plugin login keeps tokens server-side and supplies isolated cookie identit
         enabled: true, state: 'authenticated', username: index ? 'user-b' : 'user-a',
       });
       assert.ok(!status.headers.get('set-cookie').includes('server-only-token'));
+    }
+    // Both users execute concurrently, across nested CLS and driver ALS scopes.
+    await Promise.all(cookies.map(async cookie => {
       const query = await fetch(`${base}/api/query`, { headers: { Cookie: cookie } });
       assert.equal(query.status, 200);
       assert.ok(!(await query.text()).includes('server-only-token'));
-    }
-    assert.deepEqual(observed, ['server-only-token-a', 'server-only-token-b']);
+    }));
+    assert.deepEqual(observed.slice().sort(), ['server-only-token-a', 'server-only-token-b']);
+    assert.equal(cls.get('user'), undefined, 'identity is absent outside the request scope');
+    assert.equal(oracledb.getSecurityContextProvider().getCurrentContext(), null);
     const invalidHeader = await fetch(`${base}/api/query`, {
       headers: { Cookie: cookies[0], Authorization: 'Basic invalid' },
     });
     assert.equal(invalidHeader.status, 401);
+    const spoofedBearer = await fetch(`${base}/api/query`, {
+      headers: { Cookie: cookies[0], Authorization: 'Bearer spoofed-token' },
+    });
+    assert.equal(spoofedBearer.status, 401, 'session auth must not trust raw bearer tokens');
     const logout = await fetch(`${base}/deepsec/auth/logout`, {
       method: 'POST', headers: { Cookie: cookies[0] },
     });
@@ -162,4 +198,36 @@ test('secure cookies are the default; invalid login configuration is rejected', 
   try { assert.equal(service.cookieOptions().secure, true); }
   finally { service.onApplicationShutdown(); }
   assert.throws(() => new AzureLoginService({ clientId: 'x', authority: 'x', scopes: [] }), /azureLogin/);
+});
+
+
+test('CLS mapper supplies trusted roles and attributes without a request argument', async () => {
+  const { service } = fakeAzure();
+  const { app, cls } = await createApp(service);
+  try {
+    assert.equal(mapDemoIdentity(cls), null);
+    await cls.run(async () => {
+      cls.set('user', { accessToken: 'test-token', oracleRoles: ['READER'],
+        oracleAttributes: { tenant: 'test' } });
+      await delay(1);
+      assert.deepEqual(mapDemoIdentity(cls), { endUserToken: 'test-token',
+        dataRoles: ['READER'], attributes: { tenant: 'test' } });
+    });
+    assert.equal(mapDemoIdentity(cls), null);
+  } finally { await app.close(); }
+});
+
+
+test('async configuration without login fails closed and exposes no usable login flow', async () => {
+  const service = new AzureLoginService(undefined);
+  const { app, base, observed } = await createApp(service, null);
+  try {
+    const status = await fetch(`${base}/deepsec/auth/status`);
+    assert.equal(status.status, 404);
+    for (const action of ['start', 'logout']) {
+      assert.equal((await fetch(`${base}/deepsec/auth/${action}`, { method: 'POST' })).status, 404);
+    }
+    assert.equal((await fetch(`${base}/api/query`)).status, 401);
+    assert.equal(observed.length, 0);
+  } finally { await app.close(); }
 });
