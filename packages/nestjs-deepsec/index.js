@@ -1,6 +1,6 @@
 'use strict';
 require('reflect-metadata');
-const { Module, Injectable, Inject, UnauthorizedException } = require('@nestjs/common');
+const { Module, Injectable, Inject, UnauthorizedException, ConfigurableModuleBuilder } = require('@nestjs/common');
 const { APP_INTERCEPTOR, Reflector } = require('@nestjs/core');
 const { Observable } = require('rxjs');
 const oracledb = require('oracledb');
@@ -12,6 +12,7 @@ const { DEEPSEC_POOL, PUBLIC_ROUTE, DeepSecPublic } = require('./tokens');
 const { AzureLoginService, AzureLoginController } = require('./azure-login');
 const IDENTITY_MAPPER = Symbol('DEEPSEC_IDENTITY_MAPPER');
 const OPTIONS = Symbol('DEEPSEC_OPTIONS');
+const RAW_OPTIONS = Symbol('DEEPSEC_RAW_OPTIONS');
 const ROUTE_POLICY = Symbol('DEEPSEC_ROUTE_POLICY');
 
 function snapshotIdentity(identity) {
@@ -120,13 +121,14 @@ function validateOptions(options, enableAzureLogin) {
   return options;
 }
 
-function createModule(optionsProvider, imports, enableAzureLogin) {
+function createModule(definition, enableAzureLogin) {
   return {
-    module: DeepSecModule,
-    imports,
+    ...definition,
     controllers: enableAzureLogin ? [AzureLoginController] : [],
     providers: [
-      optionsProvider,
+      ...definition.providers,
+      { provide: OPTIONS, inject: [RAW_OPTIONS],
+        useFactory: options => validateOptions(options, enableAzureLogin) },
       { provide: IDENTITY_MAPPER, inject: [OPTIONS], useFactory: config => config.mapIdentity ?? null },
       { provide: ROUTE_POLICY, inject: [OPTIONS], useFactory: config => config.isPublic ?? null },
       { provide: AzureLoginService, inject: [OPTIONS],
@@ -140,14 +142,20 @@ function createModule(optionsProvider, imports, enableAzureLogin) {
   };
 }
 
-class DeepSecModule {
+// Nest owns async configuration, imports and dependency-injection plumbing.
+const { ConfigurableModuleClass } = new ConfigurableModuleBuilder({ optionsInjectionToken: RAW_OPTIONS })
+  .setClassMethodName('forRoot')
+  .setExtras({ enableAzureLogin: false }, (definition, extras) =>
+    createModule(definition, extras.enableAzureLogin))
+  .build();
+
+class DeepSecModule extends ConfigurableModuleClass {
   static forRoot(options) {
     const enableAzureLogin = Boolean(options?.azureLogin);
-    return createModule({ provide: OPTIONS, useValue: validateOptions(options, enableAzureLogin) },
-      [], enableAzureLogin);
+    validateOptions(options, enableAzureLogin);
+    return super.forRoot({ ...options, enableAzureLogin });
   }
 
-  // Services resolve once, while mapping and route callbacks run per request.
   static forRootAsync(options) {
     if (typeof options?.useFactory !== 'function') {
       throw new TypeError('DeepSecModule.forRootAsync requires useFactory');
@@ -155,13 +163,7 @@ class DeepSecModule {
     if (options.enableAzureLogin !== undefined && typeof options.enableAzureLogin !== 'boolean') {
       throw new TypeError('enableAzureLogin must be a boolean');
     }
-    const enableAzureLogin = options.enableAzureLogin === true;
-    return createModule({
-      provide: OPTIONS,
-      inject: options.inject || [],
-      useFactory: async (...dependencies) =>
-        validateOptions(await options.useFactory(...dependencies), enableAzureLogin),
-    }, options.imports || [], enableAzureLogin);
+    return super.forRootAsync(options);
   }
 }
 Module({})(DeepSecModule);
