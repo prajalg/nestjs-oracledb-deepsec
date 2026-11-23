@@ -2,6 +2,7 @@ import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common'
 import * as oracledb from 'oracledb';
 import { DEEPSEC_POOL } from 'nestjs-oracledb-deepsec';
 import { performance } from 'node:perf_hooks';
+const { errorDetails } = require('nestjs-oracledb-deepsec/error-details');
 
 export const DEMO_QUERY = `SELECT SYS_CONTEXT('USERENV', 'SESSION_USER') AS DB_USER,
        SYS_CONTEXT('USERENV', 'DB_NAME') AS DB_NAME,
@@ -32,12 +33,8 @@ export class DatabaseService {
         sql: DEMO_QUERY,
       };
     } catch (error) {
-      // Return a diagnostic code without exposing credentials or connect descriptors.
-      const code = (error as { code?: string }).code;
-      throw new ServiceUnavailableException({
-        message: 'Oracle query failed. Check database access and local configuration.',
-        code: code && /^(ORA|NJS|DPI)-\d+$/.test(code) ? code : 'DATABASE_UNAVAILABLE',
-      });
+      const details = errorDetails(error, 'Oracle query failed');
+      throw new ServiceUnavailableException({ code: 'DATABASE_UNAVAILABLE', ...details });
     } finally {
       if (connection) {
         await connection.close().catch(() => {

@@ -199,16 +199,16 @@ test('login rejects cross-origin requests and cancellation cannot resurrect a lo
   } finally { await app.close(); }
 });
 
-test('failed sign-in is reported without returning provider errors or tokens', async () => {
+test('failed sign-in reports the provider message without returning tokens', async () => {
   const { service, pending } = fakeAzure();
   const { app, base } = await createApp(service);
   try {
     const start = await fetch(`${base}/deepsec/auth/start`, { method: 'POST' });
     const cookie = start.headers.get('set-cookie').split(';')[0];
-    pending[0].reject(new Error('sensitive provider details'));
+    pending[0].reject(new Error('AADSTS65001: consent required; access_token=fixture-secret'));
     await flush();
     const status = await fetch(`${base}/deepsec/auth/status`, { headers: { Cookie: cookie } });
-    assert.deepEqual(await status.json(), { enabled: true, state: 'failed' });
+    assert.deepEqual(await status.json(), { enabled: true, state: 'failed', error: { message: 'AADSTS65001: consent required; access_token=[REDACTED]' } });
     assert.equal((await fetch(`${base}/api/query`, { headers: { Cookie: cookie } })).status, 401);
   } finally { await app.close(); }
 });
@@ -257,7 +257,7 @@ test('simulated expired OBO secret fails safely after real Passport authenticati
   const { service, pending } = fakeAzure();
   // Reproduce the error boundary returned by the driver when Azure rejects OBO.
   // No Azure token exchange or Oracle connection is attempted by this fixture.
-  const cause = Object.assign(new Error('sensitive-provider-diagnostics'), {
+  const cause = Object.assign(new Error('AADSTS7000222: The provided client secret keys are expired. client_secret=fixture-secret'), {
     errorCode: 'invalid_client', errorCodes: [7000222],
   });
   const connectionError = Object.assign(new Error('security provider failed'), {
@@ -278,14 +278,35 @@ test('simulated expired OBO secret fails safely after real Passport authenticati
     assert.equal(response.headers.get('cache-control'), 'no-store');
     const body = await response.json();
     assert.equal(body.code, 'NJS-198');
-    assert.equal(body.message, 'Oracle query failed. Check database access and local configuration.');
+    assert.match(body.message, /security provider failed/);
+    assert.match(body.message, /AADSTS7000222/);
+    assert.match(body.message, /client secret keys are expired/);
     const serialized = JSON.stringify(body);
     for (const sensitive of ['server-only-test-user-token', 'sensitive-provider-diagnostics',
-      'invalid_client', '7000222']) assert.ok(!serialized.includes(sensitive));
+      'fixture-secret']) assert.ok(!serialized.includes(sensitive));
     assert.equal(observed.length, 0, 'SQL must not execute after connection/provider failure');
     const status = await fetch(`${base}/deepsec/auth/status`, { headers: { Cookie: cookie } });
     assert.equal((await status.json()).state, 'authenticated',
       'a DB credential error is separate from end-user authentication');
     assert.equal(oracledb.getSecurityContextProvider().getCurrentContext(), null);
+  } finally { await app.close(); }
+});
+
+
+test('immediate Azure startup failure returns its original diagnostic without credentials', async () => {
+  const service = new AzureLoginService(loginOptions, () => ({
+    async acquireTokenByDeviceCode() {
+      throw Object.assign(new Error('AADSTS700016: Application was not found. client_secret=startup-fixture-secret'), { errorCode: 'unauthorized_client' });
+    },
+  }));
+  const { app, base } = await createApp(service);
+  try {
+    const response = await fetch(`${base}/deepsec/auth/start`, { method: 'POST' });
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.equal(body.code, 'unauthorized_client');
+    assert.match(body.message, /AADSTS700016: Application was not found/);
+    assert.ok(!JSON.stringify(body).includes('startup-fixture-secret'));
+    assert.equal(service.pending.size, 0);
   } finally { await app.close(); }
 });

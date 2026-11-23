@@ -26,7 +26,7 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 th { font-size: 10px; font-weight: 600; letter-spacing: .5px; color: #73816c; background: #fafbf8; padding: 16px 20px; }
 td { padding: 22px 20px; font-size: 13px; white-space: nowrap; border-top: 1px solid #edf0e9; }
 .meta { display: flex; justify-content: space-between; padding: 14px 20px; border-top: 1px solid #edf0e9; font-size: 11px; color: #7e8b76; }
-.error { margin: 20px; padding: 16px; border-radius: 8px; background: #fff3f0; color: #9c493c; font-size: 13px; line-height: 1.6; }
+.error { white-space: pre-wrap; overflow-wrap: anywhere; margin: 20px; padding: 16px; border-radius: 8px; background: #fff3f0; color: #9c493c; font-size: 13px; line-height: 1.6; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); }
 [hidden] { display: none !important; }
 @media (max-width: 560px) { main { margin: 40px auto; padding: 0 16px; } header { align-items: flex-start; flex-direction: column; gap: 14px; } h1 { font-size: 26px; } .toolbar { padding: 16px; } }

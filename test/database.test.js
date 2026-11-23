@@ -24,13 +24,13 @@ test('releases on SQL failure and returns a diagnostic without sensitive details
   let closed = 0;
   const service = new DatabaseService();
   service.pool = { getConnection: async () => ({
-    execute: async () => { throw Object.assign(new Error('secret connection details'), { code: 'ORA-01017' }); },
+    execute: async () => { throw Object.assign(new Error('ORA-01017: invalid username/password; logon denied'), { code: 'ORA-01017' }); },
     close: async () => { closed++; },
   }) };
   await assert.rejects(service.runQuery(), error => {
     assert.equal(error.getStatus(), 503);
     assert.equal(error.getResponse().code, 'ORA-01017');
-    assert.ok(!JSON.stringify(error.getResponse()).includes('secret'));
+    assert.equal(error.getResponse().message, 'ORA-01017: invalid username/password; logon denied');
     return true;
   });
   assert.equal(closed, 1);

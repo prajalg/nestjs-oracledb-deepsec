@@ -1,6 +1,9 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const button = $('run');
+function errorMessage(data, fallback = 'Request failed') {
+  return [data.code, data.message || fallback].filter(Boolean).join(': ');
+}
 function status(label, state = '') {
   $('status').textContent = label;
   $('status').dataset.state = state;
@@ -13,7 +16,9 @@ async function initialize() {
     const data = await response.json();
     $('sql').textContent = data.query;
     await refreshLogin();
-  } catch {
+  } catch (error) {
+    $('error').textContent = error.message;
+    $('error').hidden = false;
     $('sql').textContent = 'Cannot reach the NestJS application. Reload to retry.';
     status('Application unavailable', 'error');
   }
@@ -32,7 +37,7 @@ button.addEventListener('click', async () => {
       throw new Error('Sign in with Azure to run the query.');
     }
     const data = await response.json();
-    if (!response.ok) throw new Error(`${data.code || 'Request failed'}: ${data.message || 'Please retry.'}`);
+    if (!response.ok) throw new Error(errorMessage(data));
     $('duration').textContent = `${data.durationMs} ms`;
     $('count').textContent = String(data.rows.length);
     const header = document.createElement('tr');
@@ -90,7 +95,7 @@ async function refreshLogin() {
     pollTimer = setTimeout(pollLogin, 2000);
   } else {
     $('device').hidden = true;
-    if (data.state === 'failed') throw new Error('Azure sign-in failed. Try again.');
+    if (data.state === 'failed') throw new Error(errorMessage(data.error || {}, 'Azure sign-in failed'));
     status('Sign in required');
   }
 }
@@ -111,7 +116,7 @@ $('login').addEventListener('click', async () => {
   try {
     const response = await fetch('/deepsec/auth/start', { method: 'POST' });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Could not start sign-in');
+    if (!response.ok) throw new Error(errorMessage(data, 'Could not start sign-in'));
     $('verification').href = data.verificationUri;
     $('user-code').textContent = data.userCode;
     $('device').hidden = false;

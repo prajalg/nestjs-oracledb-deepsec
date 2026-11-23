@@ -1,6 +1,7 @@
 'use strict';
 const { randomBytes } = require('node:crypto');
 const { promisify } = require('node:util');
+const { errorDetails } = require('./error-details');
 const {
   Controller, Get, Post, Req, Res, Inject, Header,
   ForbiddenException, HttpException, ServiceUnavailableException, NotFoundException,
@@ -101,16 +102,19 @@ class AzureLoginService {
         entry.identity = { token: result.accessToken, username: result.account?.username, expiresAt };
         entry.state = 'authenticated';
         delete entry.deviceCode;
-      } catch {
-        if (this.pending.get(id) === entry) entry.state = 'failed';
-        failed(new Error('Azure sign-in failed'));
+      } catch (error) {
+        if (this.pending.get(id) === entry) {
+          entry.state = 'failed';
+          entry.error = errorDetails(error, 'Azure sign-in failed');
+        }
+        failed(error);
       } finally { delete entry.request; }
     })();
     try { return await deviceCode; }
-    catch {
+    catch (error) {
       this.pending.delete(id);
       await invoke(request.session, 'destroy');
-      throw new ServiceUnavailableException('Could not start Azure sign-in. Try again.');
+      throw new ServiceUnavailableException(errorDetails(error, 'Could not start Azure sign-in'));
     } finally { clearTimeout(timeout); }
   }
 
@@ -143,7 +147,7 @@ class AzureLoginService {
       return { enabled: true, state: 'authenticated', username: identity.username };
     }
     return { enabled: Boolean(this.options), state: entry?.state === 'authenticated' ? 'signedOut' :
-      entry?.state || 'signedOut', ...(entry?.state === 'pending' && { deviceCode: entry.deviceCode }) };
+      entry?.state || 'signedOut', ...(entry?.state === 'failed' && { error: entry.error }), ...(entry?.state === 'pending' && { deviceCode: entry.deviceCode }) };
   }
 
   tokenForRequest(request) {
