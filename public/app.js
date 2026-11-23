@@ -130,6 +130,7 @@ $('login').addEventListener('click', async () => {
   }
 });
 $('logout').addEventListener('click', async () => {
+  if (!window.confirm('Are you sure you want to sign out?')) return;
   clearTimeout(pollTimer);
   try {
     const response = await fetch('/deepsec/auth/logout', { method: 'POST' });
