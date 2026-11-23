@@ -24,10 +24,10 @@ export interface DeepSecIdentity {
 
 export interface DeepSecIdentityOptions<TRequest = any> {
   /** Read identity established by the application's authentication guard.
-   * When supplied, this is the only identity source; null/undefined rejects the request.
+   * This is the only identity source; null/undefined rejects the request.
    * Only map roles/attributes from trusted application policy.
    */
-  mapIdentity?: (request: TRequest, context: ExecutionContext) =>
+  mapIdentity: (request: TRequest, context: ExecutionContext) =>
     DeepSecIdentity | null | undefined | Promise<DeepSecIdentity | null | undefined>;
   /** Reuse the app's public-route policy. true skips DeepSec, false requires identity.
    * @DeepSecPublic() remains an explicit bypass. Skipped handlers must not do protected DB work.
@@ -68,6 +68,15 @@ export interface DeepSecAsyncOptions<TRequest = any> {
   useFactory: (...dependencies: any[]) =>
     DeepSecOptions<TRequest> | Promise<DeepSecOptions<TRequest>>;
 }
+
+/** Extract a bearer token only; does not authenticate or authorize the request. */
+export declare function mapBearerIdentity(request: { headers?: { authorization?: string } }): DeepSecIdentity | null;
+/** Read built-in Azure login's server-side session when passportSession is disabled.
+ * Passport apps should map their authenticated request.user or CLS user instead.
+ */
+export declare function mapSessionIdentity(request: {
+  session?: { identity?: { token: string; expiresAt: number } };
+}): DeepSecIdentity | null;
 
 /** Optional-login session reader for server-side authentication guards. */
 export declare class AzureLoginService {

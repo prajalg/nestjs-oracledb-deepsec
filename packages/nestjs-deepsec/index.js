@@ -10,6 +10,7 @@ require('oracledb/plugins/token/endUserSecurityProvider');
 const contextProvider = oracledb.getSecurityContextProvider();
 const { DEEPSEC_POOL, PUBLIC_ROUTE, DeepSecPublic } = require('./tokens');
 const { AzureLoginService, AzureLoginController } = require('./azure-login');
+const { mapBearerIdentity, mapSessionIdentity } = require('./identity-mappers');
 const OPTIONS = Symbol('DEEPSEC_OPTIONS');
 const RAW_OPTIONS = Symbol('DEEPSEC_RAW_OPTIONS');
 
@@ -36,9 +37,8 @@ function snapshotIdentity(identity) {
 }
 
 class DeepSecInterceptor {
-  constructor(reflector, login, options) {
+  constructor(reflector, options) {
     this.reflector = reflector;
-    this.login = login;
     this.mapIdentity = options.mapIdentity;
     this.isPublic = options.isPublic;
   }
@@ -55,20 +55,8 @@ class DeepSecInterceptor {
     if (isPublic === true) return next.handle();
 
     const request = context.switchToHttp().getRequest();
-    let metadata;
-    if (this.mapIdentity) {
-      // Authentication guards run first. The mapper is authoritative: never fall
-      // back to a raw header or demo session when the authenticated identity is absent.
-      metadata = snapshotIdentity(await this.mapIdentity(request, context));
-    } else {
-      const authorization = request.headers.authorization;
-      const match = typeof authorization === 'string' && /^Bearer\s+(\S+)$/i.exec(authorization);
-      // Compatibility path: Azure validates a forwarded bearer token during OBO.
-      if (authorization !== undefined && !match) throw new UnauthorizedException('Invalid bearer header');
-      const token = match ? match[1] : this.login.tokenForRequest(request);
-      if (!token) throw new UnauthorizedException('Sign in required');
-      metadata = { endUserToken: token };
-    }
+    // Authentication belongs to the app; this callback is the only identity source.
+    const metadata = snapshotIdentity(await this.mapIdentity(request, context));
 
     // Nest handlers are lazy Observables: subscribe while the async scope is active.
     return new Observable(subscriber => contextProvider.runWithContext(
@@ -79,8 +67,7 @@ class DeepSecInterceptor {
 }
 Injectable()(DeepSecInterceptor);
 Inject(Reflector)(DeepSecInterceptor, undefined, 0);
-Inject(AzureLoginService)(DeepSecInterceptor, undefined, 1);
-Inject(OPTIONS)(DeepSecInterceptor, undefined, 2);
+Inject(OPTIONS)(DeepSecInterceptor, undefined, 1);
 
 class PoolLifecycle {
   constructor(pool, options) { this.pool = pool; this.ownsPool = options.poolOptions !== undefined; }
@@ -106,10 +93,11 @@ function validateOptions(options, enableAzureLogin) {
   if (hasPoolOptions && !options.poolOptions?.endUserSecParams) {
     throw new TypeError('DeepSecModule requires poolOptions.endUserSecParams');
   }
-  for (const key of ['mapIdentity', 'isPublic']) {
-    if (options[key] !== undefined && typeof options[key] !== 'function') {
-      throw new TypeError(`DeepSecModule ${key} must be a function`);
-    }
+  if (typeof options.mapIdentity !== 'function') {
+    throw new TypeError('DeepSecModule requires a mapIdentity function');
+  }
+  if (options.isPublic !== undefined && typeof options.isPublic !== 'function') {
+    throw new TypeError('DeepSecModule isPublic must be a function');
   }
   if (options.azureLogin && !enableAzureLogin) {
     throw new TypeError('Set enableAzureLogin: true in forRootAsync to register Azure login routes');
@@ -174,5 +162,6 @@ Module({})(DeepSecModule);
 
 module.exports = {
   DeepSecModule, DeepSecPublic, DEEPSEC_POOL, AzureLoginService,
+  mapBearerIdentity, mapSessionIdentity,
   DEEPSEC_PUBLIC_ROUTE: PUBLIC_ROUTE,
 };

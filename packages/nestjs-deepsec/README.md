@@ -102,12 +102,31 @@ string array and `attributes` is a JSON object. Use only authenticated identity
 and trusted application policy. The adapter checks shape and copies roles and
 attributes into the request scope. It does not validate JWT signatures or replace
 your authentication guard. Missing/malformed identity returns 401 before the
-handler. When a mapper is configured, bearer headers and built-in login sessions
-cannot provide a fallback.
+handler. `mapIdentity` is required for both synchronous and asynchronous registration.
+There is no implicit bearer/session fallback, even when optional login is enabled.
 
-Without a mapper, direct bearer forwarding and optional built-in session lookup
-remain compatible. Bearer forwarding checks header syntax only; Azure validates
-the assertion during OBO. This is not application-level HTTP authentication.
+For existing Passport/CLS apps, keep your current authenticated-user mapper.
+For explicit token extraction, the package exports two small helpers:
+
+```ts
+import { mapBearerIdentity, mapSessionIdentity } from 'nestjs-oracledb-deepsec';
+
+// The app's guard must authenticate/authorize requests before mapping.
+DeepSecModule.forRoot({ poolOptions, mapIdentity: mapBearerIdentity });
+
+// Built-in Azure login with passportSession disabled: read its server-side session.
+DeepSecModule.forRoot({ poolOptions, azureLogin, mapIdentity: mapSessionIdentity });
+```
+
+The bearer helper checks syntax only; it does not verify signatures, audience,
+issuer or HTTP authorization. The session helper reads only `request.session.identity`,
+checks expiry, and ignores bearer headers. With `passportSession: true`, map the
+user restored by Passport instead, as in the demo. Neither helper selects another
+identity source when its expected identity is absent.
+
+Migration: configurations that previously relied on automatic bearer/session
+lookup must now set the corresponding helper explicitly. Existing custom mapper
+configurations and business handlers need no changes.
 
 `isPublic(executionContext)` reuses your app's existing public-route policy. It
 must return an explicit boolean (sync or async). Without it, all HTTP handlers
@@ -131,7 +150,7 @@ DeepSecModule.forRootAsync({
     poolOptions,
     azureLogin: {
       clientId: userLoginClientId,
-      // passportSession: true, // opt-in when the app supplies a Passport serializer
+      passportSession: true, // app supplies a Passport serializer and auth-to-CLS guard
       authority: tenantAuthority,
       scopes: [middleTierUserScope],
       // networkClient,       // optional corporate-proxy MSAL client

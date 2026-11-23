@@ -150,7 +150,7 @@ test('ambiguous pool sources and accidental async login registration are rejecte
   assert.throws(() => DeepSecModule.forRoot({}), /exactly one/);
   assert.throws(() => DeepSecModule.forRoot({ pool: {} }), /existing configured Oracle pool/);
   const bridge = DeepSecModule.forRootAsync({
-    useFactory: () => ({ pool, azureLogin: { clientId: 'test' } }),
+    useFactory: () => ({ pool, mapIdentity: () => null, azureLogin: { clientId: 'test' } }),
   });
   class InvalidAppModule {}
   Module({ imports: [bridge] })(InvalidAppModule);
@@ -160,10 +160,10 @@ test('ambiguous pool sources and accidental async login registration are rejecte
 
 test('route policy must explicitly return a boolean and cannot accidentally bypass identity', async () => {
   const { Observable } = require('rxjs');
-  const bridge = DeepSecModule.forRoot({ pool: { getConnection() {}, close() {} } });
+  const bridge = DeepSecModule.forRoot({ pool: { getConnection() {}, close() {} }, mapIdentity: () => null });
   const Interceptor = bridge.providers.find(p => p.provide === APP_INTERCEPTOR).useClass;
   let handled = false;
-  const interceptor = new Interceptor(new Reflector(), {}, {
+  const interceptor = new Interceptor(new Reflector(), {
     mapIdentity: () => null, isPublic: async () => 'true',
   });
   const context = { getType: () => 'http', getHandler: () => function handler() {},

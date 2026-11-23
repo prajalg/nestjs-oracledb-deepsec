@@ -4,12 +4,13 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { Module } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
 const oracledb = require('oracledb');
-const { DeepSecModule, DEEPSEC_POOL } = require('nestjs-oracledb-deepsec');
+const { DeepSecModule, DEEPSEC_POOL, mapBearerIdentity } = require('nestjs-oracledb-deepsec');
 const { DatabaseService } = require('../dist/database.service');
 const { AppController } = require('../dist/app.controller');
 const contextProvider = oracledb.getSecurityContextProvider();
 
 const options = {
+  mapIdentity: mapBearerIdentity,
   poolOptions: {
     user: 'test', password: 'test', connectString: 'localhost:1521/test', poolMin: 0,
     endUserSecParams: {
@@ -118,6 +119,7 @@ test('guard identities map into isolated driver scopes with no raw-header fallba
     canActivate(context) {
       const req = context.switchToHttp().getRequest();
       req.user = users[req.headers['x-test-user']];
+      req.session = { identity: { token: 'must-not-fallback', expiresAt: Date.now() + 60000 } };
       req.guardRan = true;
       return true;
     }
@@ -189,9 +191,7 @@ test('mapped Observable subscriptions preserve context, errors and cancellation 
   const Interceptor = bridge.providers.find(p => p.provide === APP_INTERCEPTOR).useClass;
   const identity = { endUserToken: 'test-token', dataRoles: ['READER'],
     attributes: { tenant: { id: 'original' } } };
-  const interceptor = new Interceptor(new Reflector(), {
-    tokenForRequest() { throw new Error('session must not be consulted'); },
-  }, { mapIdentity: () => identity });
+  const interceptor = new Interceptor(new Reflector(), { mapIdentity: () => identity });
   const context = { getType: () => 'http', getHandler: () => function handler() {},
     getClass: () => class Controller {}, switchToHttp: () => ({ getRequest: () => ({ headers: {} }) }) };
   let teardown = 0;
