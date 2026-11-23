@@ -17,6 +17,7 @@ The optional user-login feature belongs to the portable plugin. The app configur
 ```
 Azure device login -> user token in plugin's server-side session
   -> browser sends opaque HttpOnly cookie
+  -> Passport AzureSessionStrategy -> req.user
   -> AzureSessionGuard sets cls.user -> mapDemoIdentity(cls)
   -> plugin runWithContext({ endUserToken, dataRoles, attributes })
   -> unchanged runQuery() -> shared driver plugin exchanges token -> Oracle
@@ -28,6 +29,7 @@ The ignored .env contains Oracle settings, Azure middle-tier credentials, public
 
 - `packages/nestjs-deepsec/index.js`: loads the shared driver plugin, creates/exports DEEPSEC_POOL, installs the HTTP request-scope interceptor, and closes the pool on shutdown.
 - `packages/nestjs-deepsec/azure-login.js`: optional Azure device login, bounded server-side sessions, cookie resolution, expiry, logout, and login endpoints. Access tokens are never returned by these endpoints.
+- `src/azure-session.strategy.ts`: Passport validates the existing opaque Azure session and returns its server-side identity.
 - `src/azure-session.guard.ts`: the real NestJS session guard authenticates protected requests, stores the authenticated user in request-local CLS, and maps it to driver identity metadata.
 - `src/app.module.ts`: initializes CLS middleware, registers the guard and injected identity mapper, configures optional azureLogin (public client/user scope) and poolOptions.endUserSecParams (middle-tier credentials/database scope).
 - `src/database.service.ts`: receives DEEPSEC_POOL through injection. runQuery() still uses ordinary getConnection(), execute(), and close().
@@ -35,7 +37,7 @@ The ignored .env contains Oracle settings, Azure middle-tier credentials, public
 - `src/azure-network.ts`: app-owned corporate proxy networking passed to both MSAL sign-in and the driver's Azure extension.
 - `public/`: small sign-in button, verification link/code, query button and results table. No access tokens in browser storage or URLs.
 
-Apps with existing authentication can omit azureLogin, retain their own guard (for example Passport), and configure mapIdentity for that guard's user shape. See the package README. This demo uses a real NestJS cookie-session guard, not Passport. It rejects Authorization headers on protected routes; use its Azure login session instead.
+Apps with existing authentication can omit azureLogin, retain their own guard (for example Passport), and configure mapIdentity for that guard's user shape. See the package README. This demo uses a real Passport custom strategy behind the NestJS cookie-session guard. It rejects Authorization headers on protected routes; use its Azure login session instead.
 
 The guard permits @DeepSecPublic() health/login routes, reads only nonexpired authenticated sessions through the exported AzureLoginService.tokenForRequest(), and sets `cls.set('user', identity)` server-side. The adapter's mapper then forwards the token. No Oracle roles or attributes are invented: the optional fields remain unset until trusted app policy supplies them. No authentication endpoint returns the CLS identity or its token.
 
@@ -67,7 +69,7 @@ driver context path. Automated HTTP tests use the actual AzureSessionGuard and
 mapDemoIdentity with stubbed Azure responses/database I/O. They cover public routes,
 pending/forged/expired/logged-out sessions, rejected bearer headers, isolated users,
 and keeping tokens out of HTTP responses. This checkpoint does not repeat the
-historical live Azure/Oracle test above or claim a real Passport integration.
+historical live Azure/Oracle test above. The Passport checkpoint below extends this path.
 The SQL and runQuery() are unchanged.
 
 
@@ -121,3 +123,42 @@ Automated tests exercise an unchanged service using its original pool token,
 existing route metadata, concurrent CLS identities, absent optional login routes,
 and pool ownership. They stub SQL and token acquisition and do not prove live
 Azure/Oracle enforcement.
+
+
+## Checkpoint 1: real Passport integration
+
+`AzureSessionStrategy` extends Nest's `PassportStrategy` using `passport-custom`.
+It authenticates the existing opaque session cookie through the server-side
+`AzureLoginService`, rejecting missing/pending/expired/logged-out sessions and raw
+Authorization headers. The user token originates from MSAL device login; no new
+password grant, session store, or unsigned/decode-only JWT authentication is added.
+
+`AzureSessionGuard` now extends `AuthGuard('azure-session')`. Passport authenticates
+and sets `request.user`; only then does the guard copy it into the request-local
+CLS store. The configured mapper and SQL stay unchanged. Public login/health
+routes bypass authentication as before. `PassportModule.register({ session: false })`
+turns off Passport/Express session serialization; it does not disable the existing
+Azure session store used by this custom strategy.
+
+Automated HTTP tests use the real Passport module/strategy/guard with stubbed Azure
+responses and DB execution. They assert Passport's authenticated state and
+`request.user` -> CLS identity, concurrent user isolation through awaited SQL,
+rejected invalid sessions, logout and expiry, public routes, and no access-token
+leak through query/login responses. They do not retest live Azure/Oracle access or
+claim coverage of a separate Passport JWT/OIDC strategy.
+
+The shared adapter has no Passport dependency. An existing app can keep its own
+strategy and use its identity mapping; the strategy added here belongs to the demo.
+
+## Following checkpoints
+
+1. Review Passport integration before committing this checkpoint.
+2. Exercise operation-level driver resolution and context cleanup, then consider
+   changing the demo default. Do not share borrowed connections concurrently.
+3. Define and test streaming cancellation/resource lifetime and background-job
+   scope boundaries, including rejection when identity is missing.
+4. Review authentication trust, token/session lifecycle, pool enforcement and
+   expiry/revocation behavior. CLS itself is not authentication, and an existing
+   pool must have the driver plugin configured before creation.
+
+These are separate review checkpoints; this change does not claim they are complete.

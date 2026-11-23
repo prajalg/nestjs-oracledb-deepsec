@@ -1,6 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { Module } = require('@nestjs/common');
+const { PassportModule } = require('@nestjs/passport');
+const { AzureSessionStrategy } = require('../dist/azure-session.strategy');
 const { ClsModule, ClsService } = require('nestjs-cls');
 const { setTimeout: delay } = require('node:timers/promises');
 const { NestFactory, APP_GUARD } = require('@nestjs/core');
@@ -35,11 +37,12 @@ function result(token, username = 'test-user') {
 }
 async function flush() { await new Promise(resolve => setImmediate(resolve)); }
 
-async function createApp(login, azureLogin = loginOptions) {
+async function createApp(login, azureLogin = loginOptions, connectionError) {
   const observed = [];
   let cls;
   const pool = {
     async getConnection() {
+      if (connectionError) throw connectionError;
       return {
         async execute() {
           const metadata = oracledb.getSecurityContextProvider().getCurrentContext();
@@ -61,7 +64,11 @@ async function createApp(login, azureLogin = loginOptions) {
     inject: [ClsService],
     useFactory: async cls => ({
       azureLogin,
-      mapIdentity: () => mapDemoIdentity(cls),
+      mapIdentity: request => {
+        assert.equal(request.isAuthenticated(), true, 'real Passport authenticates before mapping');
+        assert.equal(request.user, cls.get('user'), 'Passport user is bridged into CLS');
+        return mapDemoIdentity(cls);
+      },
       poolOptions: { endUserSecParams: { spiType: 'azure', authFlow: 'onBehalfOf' } },
     }),
   });
@@ -71,8 +78,8 @@ async function createApp(login, azureLogin = loginOptions) {
     return provider;
   });
   class TestModule {}
-  Module({ imports: [ClsModule.forRoot({ global: true, middleware: { mount: true } }), bridge],
-    controllers: [AppController], providers: [DatabaseService,
+  Module({ imports: [PassportModule.register({ session: false }), ClsModule.forRoot({ global: true, middleware: { mount: true } }), bridge],
+    controllers: [AppController], providers: [DatabaseService, AzureSessionStrategy,
     { provide: APP_GUARD, useClass: AzureSessionGuard }] })(TestModule);
   const app = await NestFactory.create(TestModule, { logger: false });
   await app.listen(0, '127.0.0.1');
@@ -80,7 +87,7 @@ async function createApp(login, azureLogin = loginOptions) {
   return { app, base: await app.getUrl(), observed, cls };
 }
 
-test('CLS middleware, session guard and injected mapper isolate identities through asynchronous SQL', async () => {
+test('real Passport session strategy bridges concurrent authenticated users into CLS and driver scopes', async () => {
   const { service, pending } = fakeAzure();
   const { app, base, observed, cls } = await createApp(service);
   try {
@@ -229,5 +236,40 @@ test('async configuration without login fails closed and exposes no usable login
     }
     assert.equal((await fetch(`${base}/api/query`)).status, 401);
     assert.equal(observed.length, 0);
+  } finally { await app.close(); }
+});
+
+
+test('simulated expired OBO secret fails safely after real Passport authentication', async () => {
+  const { service, pending } = fakeAzure();
+  // Reproduce the error boundary returned by the driver when Azure rejects OBO.
+  // No Azure token exchange or Oracle connection is attempted by this fixture.
+  const cause = Object.assign(new Error('sensitive-provider-diagnostics'), {
+    errorCode: 'invalid_client', errorCodes: [7000222],
+  });
+  const connectionError = Object.assign(new Error('security provider failed'), {
+    code: 'NJS-198', cause,
+  });
+  const { app, base, observed } = await createApp(service, loginOptions, connectionError);
+  try {
+    const start = await fetch(`${base}/deepsec/auth/start`, { method: 'POST' });
+    assert.equal(start.status, 201);
+    const cookie = start.headers.get('set-cookie').split(';')[0];
+    pending[0].resolve(result('server-only-test-user-token'));
+    await flush();
+    const response = await fetch(`${base}/api/query`, { headers: { Cookie: cookie } });
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const body = await response.json();
+    assert.equal(body.code, 'NJS-198');
+    assert.equal(body.message, 'Oracle query failed. Check database access and local configuration.');
+    const serialized = JSON.stringify(body);
+    for (const sensitive of ['server-only-test-user-token', 'sensitive-provider-diagnostics',
+      'invalid_client', '7000222']) assert.ok(!serialized.includes(sensitive));
+    assert.equal(observed.length, 0, 'SQL must not execute after connection/provider failure');
+    const status = await fetch(`${base}/deepsec/auth/status`, { headers: { Cookie: cookie } });
+    assert.equal((await status.json()).state, 'authenticated',
+      'a DB credential error is separate from end-user authentication');
+    assert.equal(oracledb.getSecurityContextProvider().getCurrentContext(), null);
   } finally { await app.close(); }
 });

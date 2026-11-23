@@ -1,5 +1,7 @@
 import { Module, OnApplicationShutdown } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { PassportModule } from '@nestjs/passport';
+import { AzureSessionStrategy } from './azure-session.strategy';
 import { ClsModule, ClsService } from 'nestjs-cls';
 import { AzureSessionGuard, DemoAuthStore, mapDemoIdentity } from './azure-session.guard';
 import { DeepSecModule } from 'nestjs-oracledb-deepsec';
@@ -16,6 +18,7 @@ const networkClient = createAzureNetworkClient();
 
 @Module({
   imports: [
+    PassportModule.register({ session: false }),
     ClsModule.forRoot({ global: true, middleware: { mount: true } }),
     DeepSecModule.forRootAsync({
       enableAzureLogin: true,
@@ -54,7 +57,8 @@ const networkClient = createAzureNetworkClient();
     }),
   ],
   controllers: [AppController],
-  providers: [DatabaseService, { provide: APP_GUARD, useClass: AzureSessionGuard }],
+  providers: [DatabaseService, AzureSessionStrategy,
+    { provide: APP_GUARD, useClass: AzureSessionGuard }],
 })
 export class AppModule implements OnApplicationShutdown {
   async onApplicationShutdown() { await networkClient?.close(); }
