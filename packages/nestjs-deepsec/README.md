@@ -1,181 +1,226 @@
-# NestJS DeepSec adapter
+# NestJS plugin for Oracle Deep Data Security
 
-A small HTTP adapter around the shared node-oracledb DeepSec provider. It reads
-identity established by the application's authentication guard and wraps handler
-execution in the driver's `runWithContext()` scope. Controllers and query methods
-continue using node-oracledb normally.
+Connect your app's authenticated user to Oracle Deep Data Security (DeepSec).
+Configure the plugin once. Your controllers and query methods do not need token
+arguments or manual `runWithContext()` calls.
 
-The package owns no authentication, Azure login, Passport setup, CLS store,
-session middleware, cookie, token-renewal flow or login endpoints. These belong to
-the application. Passport, custom guards, sessions and CLS are supported through
-one callback, not separate authentication branches inside the adapter.
+## What changes in your app?
 
-## Existing authenticated app
+1. Keep your existing login and authentication guards.
+2. Register `DeepSecModule` with your database and DeepSec settings.
+3. Provide one `mapIdentity` function to read the signed-in user's access token.
+4. Use the configured pool for database work.
 
-```ts
-DeepSecModule.forRoot({
-  poolOptions: {
-    ...yourOraclePoolOptions,
-    // Passed unchanged to the SHARED DRIVER; the driver owns OBO/token caching/EUSC.
-    endUserSecParams: {
-      spiType: 'azure', authFlow: 'onBehalfOf', contextResolution: 'operation',
-      clientId, clientSecret, authority, scopes,
-    },
-  },
-  // Runs per protected request, AFTER your auth guard. request.user is YOUR
-  // convention, not a requirement of the adapter or evidence of Passport use.
-  mapIdentity: request => request.user ? {
-    endUserToken: request.user.accessToken,
-    dataRoles: request.user.oracleRoles,
-    attributes: request.user.oracleAttributes,
-  } : null,
-});
+Passport and CLS are optional. The plugin reads the identity your app supplies;
+your app remains responsible for login, token validation, expiry and renewal.
+
+## 1. Install
+
+This package is currently private. From the package source directory, build an
+installable archive:
+
+```sh
+npm install
+npm pack
 ```
 
-Your guard must authenticate/authorize the request before mapping. The callback
-must provide an ACCESS token suitable for the configured exchange. A username,
-session ID, ID token or JWT claims object alone is insufficient. Do not treat JWT
-decoding as signature/issuer/audience validation. Only use trusted app policy for
-roles/attributes. The adapter validates shape and takes a snapshot; it does not
-validate authentication cryptographically or grant database permissions.
+Then, from your NestJS application:
+
+```sh
+npm install /path/to/nestjs-oracledb-deepsec-0.1.0.tgz oracledb@26.0.0
+```
+
+The package expects NestJS 11, RxJS 7 and reflect-metadata 0.2. Consumers install
+compiled JavaScript and types; they do not need to build the plugin.
+For the Azure driver provider, also install `@azure/msal-node`.
+
+Your database must already have DeepSec and its identity provider configured.
+The app must obtain an access token accepted by that provider.
+
+## 2. Register the plugin once
+
+A NestJS module registers the parts of your app. Add `DeepSecModule` to your
+module's `imports`. Keep your existing authentication module and guards enabled.
+
+This example uses Azure On-Behalf-Of (OBO) to obtain a database token for the user:
+
+```ts
+import { Module } from '@nestjs/common';
+import { DeepSecModule } from 'nestjs-oracledb-deepsec';
+
+@Module({
+  imports: [
+    DeepSecModule.forRoot({
+      poolOptions: {
+        user: process.env.NODE_ORACLEDB_USER,
+        password: process.env.NODE_ORACLEDB_PASSWORD,
+        connectString: process.env.NODE_ORACLEDB_CONNECTIONSTRING,
+        walletLocation: process.env.NODE_ORACLEDB_WALLET_LOCATION,
+        walletPassword: process.env.NODE_ORACLEDB_WALLET_PASSWORD,
+        endUserSecParams: {
+          spiType: 'azure',
+          authFlow: 'onBehalfOf',
+          contextResolution: 'operation',
+          clientId: process.env.AZURE_DB_CLIENT_ID,
+          clientSecret: process.env.AZURE_DB_CLIENT_CREDENTIAL,
+          authority: process.env.AZURE_DB_AUTHORITY,
+          scopes: (process.env.AZURE_DB_SCOPES ?? '')
+            .split(/[\s,]+/).filter(Boolean),
+        },
+      },
+      // Your authentication guard must establish this user first.
+      mapIdentity: request => request.user
+        ? { endUserToken: request.user.accessToken }
+        : null,
+    }),
+  ],
+  // Keep your existing controllers and providers here.
+})
+export class AppModule {}
+```
+
+Load and validate these environment settings before creating the module.
+`endUserSecParams` is passed to the shared node-oracledb provider. These are
+settings for the database token exchange, separate from your app's login settings.
+
+`mapIdentity` runs once per protected HTTP request, after Nest guards. Return an
+access token, with optional trusted roles and attributes:
+
+```ts
+return {
+  endUserToken: user.accessToken,
+  dataRoles: user.oracleRoles,       // Optional string array
+  attributes: user.oracleAttributes, // Optional JSON-compatible object
+};
+```
+
+A missing or malformed mapped identity returns 401 before the handler runs.
+Supply an access token, not a username, session ID, ID token or decoded claims.
+The plugin checks the identity's shape; it does not authenticate the user.
+
+## 3. Use the pool in your service
+
+When you supply `poolOptions`, the plugin creates the pool and exports it as
+`DEEPSEC_POOL`. Inject it into a provider in the module that imports `DeepSecModule`:
+
+```ts
+import { Inject, Injectable } from '@nestjs/common';
+import type { Pool } from 'oracledb';
+import { DEEPSEC_POOL } from 'nestjs-oracledb-deepsec';
+
+@Injectable()
+export class EmployeesService {
+  constructor(@Inject(DEEPSEC_POOL) private readonly pool: Pool) {}
+
+  async findAll() {
+    const connection = await this.pool.getConnection();
+    try {
+      return await connection.execute('SELECT * FROM hr.employees');
+    } finally {
+      await connection.close();
+    }
+  }
+}
+```
+
+Query methods still use ordinary `getConnection()`, `execute()` and `close()`.
+Keep controllers calling these services as usual.
+
+The plugin closes a pool it creates during application shutdown. Enable
+`app.enableShutdownHooks()` in your bootstrap code for signal-triggered shutdown.
+
+### Already have a pool?
+
+Pass `pool` instead of `poolOptions`. Keep your existing pool injection, query
+methods and shutdown code. The pool must have been created with DeepSec enabled;
+the plugin cannot add that setting to an existing pool.
+
+Use `forRootAsync({ imports, inject, useFactory })` when the pool or configuration
+comes from another Nest provider. Import the module that exports that provider.
+For services in another feature module, make the configured pool provider
+available through Nest module imports and exports as usual.
 
 ## Other authentication setups
 
-There is no required property name or storage library. Choose one integration:
+Change only the mapping to match your app's authenticated identity:
 
 ```ts
-// Passport or a custom guard that sets request.user:
-mapIdentity: req => req.user ? { endUserToken: req.user.accessToken } : null
-
-// Your own authentication guard uses a different request property:
+// A custom guard stores the authenticated user on request.auth:
 mapIdentity: req => req.auth?.principal
-  ? { endUserToken: req.auth.principal.accessToken } : null
+  ? { endUserToken: req.auth.principal.accessToken }
+  : null
 
-// App-owned server-side session, already authenticated and checked for expiry:
+// An authenticated server-side session stores the account:
 mapIdentity: req => req.session?.account
-  ? { endUserToken: req.session.account.accessToken } : null
+  ? { endUserToken: req.session.account.accessToken }
+  : null
 ```
 
-For an existing CLS setup, inject its service once and read identity inside the
-per-request callback. Do not capture a user in the startup factory:
+For CLS or an identity service, inject that service through `forRootAsync` and
+read the current user inside `mapIdentity`. The callback can also be asynchronous.
+Read the user per request, rather than capturing one at startup.
 
-```ts
-DeepSecModule.forRootAsync({
-  imports: [ExistingDatabaseModule],
-  inject: [EXISTING_POOL, ClsService],
-  useFactory: (pool, cls) => ({
-    pool,
-    mapIdentity: () => {
-      const user = cls.get('user'); // Your guard placed a trusted user here.
-      return user ? { endUserToken: user.accessToken,
-        dataRoles: user.oracleRoles, attributes: user.oracleAttributes } : null;
-    },
-  }),
-});
+See the [integration examples](examples/README.md) for request-user, custom-auth,
+session, CLS and async identity mappings. Use the example that matches your app.
+
+## How this simplifies your code
+
+```text
+App authenticates request
+  -> plugin reads mapIdentity
+  -> plugin opens the driver's runWithContext(identity, ...) scope
+  -> existing controller and service run their queries
+  -> shared driver resolves tokens and the end-user security context (EUSC)
+  -> Oracle enforces its data-access policies
 ```
 
-The package does not import `nestjs-cls`; this is an application dependency only
-when the app chooses it. The package's `examples/auth-configurations.ts`
-contains commented, type-checked request-user, custom-auth, server-session, CLS
-and async-resolver examples. Existing auth guards remain in place; no changes to
-every controller/service are required to pass identity arguments.
+The plugin registers a global interceptor: NestJS code that wraps request
+handlers. It starts the handler inside the driver's asynchronous identity scope,
+so database calls can read that request's identity without extra function
+arguments. Nest's Observable subscription and teardown are preserved.
 
-## Configuration and pool ownership
-
-`mapIdentity(request, executionContext)` is required, may be sync/async, and is
-called once per protected HTTP request. Return `{ endUserToken, dataRoles?,
-attributes? }` or null/undefined to reject. Missing/malformed identity returns 401
-before the handler, without trying headers or another session as a fallback.
-
-Supply exactly one of `poolOptions` and `pool`. With `poolOptions`, the adapter
-creates the pool and drains/closes it on app shutdown. With `pool`, the app retains
-its existing pool injection and lifecycle. An existing pool must be created with
-DeepSec configured; this adapter cannot retrofit that setting. A supplied pool is
-not inspected through private driver properties. The app must enable Nest shutdown
-hooks if it wants signal-triggered pool shutdown.
-
-`endUserSecParams` is forwarded unchanged and checked by the driver. The adapter
-does not restrict provider configuration to Azure, although its current identity
-contract requires an end-user token and does not expose named-user/key contexts.
-Provider/token compatibility is separate from supporting an application's
-authentication library. The Azure OBO configuration above is one provider example;
-applications must obtain tokens accepted by their configured provider.
-
-`forRootAsync` supports `imports`, `inject` and factory-based `useFactory`. The
-factory runs at startup; the returned identity callback runs per request.
+The shared driver handles token exchange, caching and EUSC installation/cleanup.
+The plugin connects that driver behavior to Nest requests.
 
 ## Public routes
 
-`@DeepSecPublic()` skips the adapter's identity scope. Or provide
-`isPublic(executionContext)` to read your app's existing public-route metadata.
-That callback must return an explicit boolean and can be asynchronous. The
-explicit decorator remains a bypass even with a custom callback.
+Mark routes that do not need an end-user database context:
 
-Keep authentication-guard and adapter route policies consistent. Skipped handlers
-must not execute protected SQL: skipping DeepSec does not prohibit ordinary DB
-login outside a scope. Mark routes public only when they do not require an
-end-user database context.
+```ts
+import { DeepSecPublic } from 'nestjs-oracledb-deepsec';
 
-## Context propagation and limits
+@DeepSecPublic()
+@Get('health')
+health() { return { status: 'ok' }; }
+```
 
-The interceptor subscribes inside the driver's async scope and returns the RxJS
-subscription for error/cancellation teardown. This covers ordinary awaited work
-and tested Observable lifecycles. It is an HTTP adapter: WebSockets, microservices,
-queues and streams consumed outside the subscription need their own scope and
-resource integration. Do not claim universal transport support or share one
-connection concurrently between different users.
+Make your authentication guard recognize the same public routes. You can also
+configure `isPublic(executionContext)` to read your existing route metadata; it
+must return a boolean. `@DeepSecPublic()` always skips the plugin's identity scope.
+A public handler must not perform protected database work: skipping the scope
+does not prevent ordinary database access through the pool account.
 
-With `contextResolution: 'operation'` as configured above, the driver resolves
-identity before supported operations and can reuse cached tokens. Connection
-resolution remains configurable for strictly request-scoped borrowing. Keep
-database work awaited and release borrowed connections.
+## Current support and limits
 
-Published 26.0.0 has a cache limitation: within one async scope, when the DB token
-changes but the token helper reports `isNewToken: false`, the provider can reuse
-the old encoded EUSC. An opt-in upstream diagnostic asserts the desired replacement behavior and fails
-on this driver. It is outside the adapter release suite; the limitation remains
-part of driver compatibility, not a fixed or passing guarantee.
+- Supports Nest HTTP handlers and database work within their asynchronous scope.
+  Detached jobs, other transports and streams consumed outside that scope need
+  separate integration. Keep work awaited and release connections after use.
+- Requires an end-user token. Named local users and application-only identities
+  are not exposed by this plugin. Authentication-library independence does not
+  mean every identity provider or database authentication flow is supported.
+- The installed shared provider supports Azure and OCI; OBO requires Azure.
+  Azure OBO has automated coverage. OCI integration has not been verified here.
+- Driver 26.0.0 has known token-cache and provider-failure cleanup defects. A
+  changed cached token can reuse an older EUSC; initial token-exchange failure can
+  prevent connection release with NJS-198. The plugin does not fix these defects.
 
-A separate provider-failure cleanup defect can cause both execute and close to
-return NJS-198 before underlying release. Both resolution modes are affected.
-Opt-in diagnostics assert correct cleanup and fail while this defect remains. No shared driver
-files are modified and the adapter does not patch driver internals.
+## For contributors
 
-## Build and package
+Run `npm test` from the package directory to build, type-check examples and test
+public plugin behavior and packed consumers. Tests need no live Azure or Oracle
+credentials; database authorization policies require separate live checks.
 
-Maintainers edit TypeScript in `src/`. `npm run build` cleans `dist/` and generates
-JavaScript/declarations. Cleaning prevents stale output from entering a tarball.
-`npm pack` builds before packing. Consumers install compiled output; they need no TypeScript/plugin build step or install/prepare hook.
-
-Nest, RxJS and node-oracledb are peers so the app and adapter share instances.
-The runtime package has no Passport, CLS, MSAL, Express or session dependency. The shared
-driver may separately require MSAL when its Azure provider is selected by the app.
-
-## Package-local examples and tests
-
-`examples/auth-configurations.ts` is included in the npm tarball so application
-developers can inspect/copy the integration pattern that matches their setup.
-See `examples/README.md`; examples never become runtime dependencies of the core.
-
-From this directory, contributors run `npm install` then `npm test`. The package
-builds itself, type-checks examples and runs its own `test/` suite. Test-only
-Passport, CLS, session and MSAL packages are dev dependencies; they are not runtime dependencies or required peers. The example
-that uses CLS requires CLS in the consuming app only if that example is chosen.
-
-`test/README.md` describes the public contract suite: `npm test` exercises normal
-assertions, and the suite contains no TODOs/skips. `prepublishOnly` runs that same suite.
-Coverage includes real Passport strategies, custom sessions, optional CLS, pool
-ownership, identity isolation and Observable teardown through Nest HTTP apps.
-Packed-consumer checks verify CommonJS/ESM imports and TypeScript declarations
-without optional authentication libraries. These checks require no live Azure or
-Oracle credentials and do not verify database authorization policies.
-
-Driver-internal regressions live in `diagnostics/`, outside default test discovery.
-Run `npm run test:driver-diagnostics` explicitly; it asserts desired driver behavior
-and currently fails on the documented upstream defects. This separation does not
-remove or fix those compatibility limits. Both `test/` and `diagnostics/` stay in
-source control and are excluded from the npm tarball. See their READMEs.
-
-The package remains marked `private: true` to prevent accidental publication.
-`npm pack` produces the installable artifact; actual npm publication requires
-intentional publication metadata/ownership decisions as well as passing checks.
+Driver reproductions stay in the source checkout's `diagnostics/` directory.
+`npm run test:driver-diagnostics` runs them separately and currently fails on the
+known driver defects. Contributor tests and diagnostics are excluded from the
+installable archive; integration examples are included.
