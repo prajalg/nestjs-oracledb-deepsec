@@ -36,6 +36,3 @@ See `../diagnostics/README.md` for the compatibility implications.
 Passport, CLS, sessions and MSAL are development-only test dependencies. Consumers
 of the core adapter need none of those unless their own chosen setup needs them.
 Tests and diagnostics stay in source control and are excluded from the npm tarball.
-
-The demo's app-owned Azure login, SQL service and UI checks remain in root `test/`.
-Root `npm test` runs this suite first, then those demo checks.

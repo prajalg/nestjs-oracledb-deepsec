@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 // missing compiled files, exports or declaration dependencies.
 test('packed plugin works in JavaScript and exposes checked TypeScript declarations', () => {
   const packageRoot = resolve(__dirname, '..');
-  // Works with package-local or hoisted dev dependencies; no demo paths required.
+  // Works with package-local or hoisted development dependencies.
   const dependencyRoot = dirname(dirname(require.resolve('typescript/package.json')));
   const compiler = require.resolve('typescript/bin/tsc');
   const temporary = mkdtempSync(join(tmpdir(), 'deepsec-package-'));
@@ -37,7 +37,7 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
     }
     for (const hook of ['install', 'postinstall', 'prepare']) assert.equal(manifest.scripts?.[hook], undefined);
 
-    // Supply peers already installed by the demo, excluding its linked plugin and compiler.
+    // Reuse installed development dependencies, excluding auth packages, the plugin and compiler.
     const { mkdirSync } = require('node:fs');
     mkdirSync(join(temporary, 'node_modules'));
     const excluded = new Set(['nestjs-oracledb-deepsec', 'typescript', '.bin',

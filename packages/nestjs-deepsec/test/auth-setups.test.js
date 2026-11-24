@@ -42,7 +42,7 @@ for (const setup of ['passport-bearer', 'custom-session']) {
     class ExistingController {
       login(request) {
         // Fixture-only login route seeds a real express-session store.
-        // The actual demo authenticates via MSAL before creating its session.
+        // Applications must authenticate the user before creating a session.
         const user = users[request.body.user];
         if (!user) throw new UnauthorizedException();
         request.session.account = user;

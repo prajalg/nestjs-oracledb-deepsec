@@ -34,6 +34,6 @@ plugin at runtime. Contributors run `npm run typecheck:examples` from the packag
 checkout after installing development dependencies. Consumers can copy the
 chosen example into their own app and use their normal TypeScript build.
 
-Live token acquisition and database authorization are application/driver concerns.
-The demo app outside this package contains one Azure device-login implementation;
-you do not need it if your app already has authentication and suitable tokens.
+The application owns login, token acquisition, session expiry and renewal. The
+configured driver provider owns downstream token exchange and database security
+contexts. These examples only connect an authenticated identity to that provider.

@@ -97,8 +97,9 @@ hooks if it wants signal-triggered pool shutdown.
 `endUserSecParams` is forwarded unchanged and checked by the driver. The adapter
 does not restrict provider configuration to Azure, although its current identity
 contract requires an end-user token and does not expose named-user/key contexts.
-The demo uses Azure OBO and published `oracledb@26.0.0`; provider/token compatibility
-is separate from supporting an application's authentication library.
+Provider/token compatibility is separate from supporting an application's
+authentication library. The Azure OBO configuration above is one provider example;
+applications must obtain tokens accepted by their configured provider.
 
 `forRootAsync` supports `imports`, `inject` and factory-based `useFactory`. The
 factory runs at startup; the returned identity callback runs per request.
@@ -112,21 +113,8 @@ explicit decorator remains a bypass even with a custom callback.
 
 Keep authentication-guard and adapter route policies consistent. Skipped handlers
 must not execute protected SQL: skipping DeepSec does not prohibit ordinary DB
-login outside a scope. The demo's app-owned login endpoints and health endpoint
-are public, while `/api/query` is protected by the app's guard.
-
-## Application-owned Azure login in this demo
-
-The demo implements Azure device login in `src/auth/azure-login.ts` and mounts it
-through `src/auth/azure-auth.module.ts`. That app module owns MSAL, express-session,
-Passport restoration, cookies, expiry and cancellation. It is not part of this
-package or tarball. The app's guard then places Passport's user in CLS and its
-configured mapper passes only identity metadata to this adapter.
-
-Applications with existing authentication should keep it and supply the mapper.
-They do not need the demo's AzureAuthModule, Passport registration or CLS setup.
-An app whose own authentication uses a different token issuer must still obtain a
-token accepted by its configured downstream driver exchange.
+login outside a scope. Mark routes public only when they do not require an
+end-user database context.
 
 ## Context propagation and limits
 
@@ -137,10 +125,10 @@ queues and streams consumed outside the subscription need their own scope and
 resource integration. Do not claim universal transport support or share one
 connection concurrently between different users.
 
-The demo explicitly selects operation resolution. The driver resolves identity
-before supported operations and can reuse cached tokens. Connection resolution
-remains configurable for strictly request-scoped borrowing. Keep database work
-awaited and release borrowed connections.
+With `contextResolution: 'operation'` as configured above, the driver resolves
+identity before supported operations and can reuse cached tokens. Connection
+resolution remains configurable for strictly request-scoped borrowing. Keep
+database work awaited and release borrowed connections.
 
 Published 26.0.0 has a cache limitation: within one async scope, when the DB token
 changes but the token helper reports `isNewToken: false`, the provider can reuse
@@ -156,30 +144,12 @@ files are modified and the adapter does not patch driver internals.
 ## Build and package
 
 Maintainers edit TypeScript in `src/`. `npm run build` cleans `dist/` and generates
-JavaScript/declarations. Cleaning ensures removed authentication artifacts do not
-survive in a tarball. `npm pack` builds before packing. Consumers install compiled
-output; they need no TypeScript/plugin build step or install/prepare hook.
+JavaScript/declarations. Cleaning prevents stale output from entering a tarball.
+`npm pack` builds before packing. Consumers install compiled output; they need no TypeScript/plugin build step or install/prepare hook.
 
 Nest, RxJS and node-oracledb are peers so the app and adapter share instances.
 The runtime package has no Passport, CLS, MSAL, Express or session dependency. The shared
 driver may separately require MSAL when its Azure provider is selected by the app.
-
-The demo's `npm test` builds the plugin/app, type-checks integration examples and
-runs the public adapter tests. Coverage includes app-owned Azure/Passport sessions, real
-Passport bearer-strategy execution without CLS, custom sessions without Passport
-or CLS, existing pools/public policies, concurrency, missing identity and Observable
-teardown through Nest HTTP applications. Packed-consumer checks run without optional authentication libraries and confirm
-that no login files/endpoints remain in the core package. These are not live
-Azure/Oracle authorization-policy tests.
-
-## Migration from the previous branch
-
-Remove `azureLogin`/`enableAzureLogin` from DeepSecModule configuration. Move that
-configuration and its auth module into the application, as the demo now does.
-Keep `mapIdentity`; existing app-owned mapper callbacks and query handlers remain
-unchanged. Package exports for AzureLoginService, login helpers and errorDetails
-have been removed. Diagnostics now live in `src/error-details.ts`, owned by the
-application. Do not import the demo's authentication code into the portable adapter.
 
 ## Package-local examples and tests
 
@@ -188,14 +158,17 @@ developers can inspect/copy the integration pattern that matches their setup.
 See `examples/README.md`; examples never become runtime dependencies of the core.
 
 From this directory, contributors run `npm install` then `npm test`. The package
-builds itself, type-checks examples and runs its own `test/` suite independently
-of the demo app. Test-only Passport, CLS, session and MSAL packages are dev
-dependencies; they are not runtime dependencies or required peers. The example
+builds itself, type-checks examples and runs its own `test/` suite. Test-only
+Passport, CLS, session and MSAL packages are dev dependencies; they are not runtime dependencies or required peers. The example
 that uses CLS requires CLS in the consuming app only if that example is chosen.
 
 `test/README.md` describes the public contract suite: `npm test` exercises normal
 assertions, and the suite contains no TODOs/skips. `prepublishOnly` runs that same suite.
-Root `npm test` runs package checks first, followed by demo-only tests.
+Coverage includes real Passport strategies, custom sessions, optional CLS, pool
+ownership, identity isolation and Observable teardown through Nest HTTP apps.
+Packed-consumer checks verify CommonJS/ESM imports and TypeScript declarations
+without optional authentication libraries. These checks require no live Azure or
+Oracle credentials and do not verify database authorization policies.
 
 Driver-internal regressions live in `diagnostics/`, outside default test discovery.
 Run `npm run test:driver-diagnostics` explicitly; it asserts desired driver behavior
