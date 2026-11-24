@@ -1,270 +1,181 @@
 # NestJS DeepSec adapter
 
-A small bridge from an application's authenticated identity to node-oracledb's
-shared `endUserSecurityProvider`. Configure one mapper; controllers, services and
-SQL keep using normal `getConnection()`, `execute()` and `close()` calls.
+A small HTTP adapter around the shared node-oracledb DeepSec provider. It reads
+identity established by the application's authentication guard and wraps handler
+execution in the driver's `runWithContext()` scope. Controllers and query methods
+continue using node-oracledb normally.
 
-## Existing application: keep authentication, CLS and pool injection
+The package owns no authentication, Azure login, Passport setup, CLS store,
+session middleware, cookie, token-renewal flow or login endpoints. These belong to
+the application. Passport, custom guards, sessions and CLS are supported through
+one callback, not separate authentication branches inside the adapter.
 
-If your app already has authentication and `nestjs-cls`, keep them. Add the
-adapter import to the module that can access your existing pool provider:
-
-```ts
-DeepSecModule.forRootAsync({
-  imports: [DatabaseModule], // exports your existing ORACLE_POOL provider
-  inject: [ORACLE_POOL, ClsService, Reflector],
-  useFactory: (pool, cls, reflector) => ({
-    pool,
-    // Reuse the same metadata key as your existing authentication guard.
-    isPublic: context => reflector.getAllAndOverride(IS_PUBLIC_KEY,
-      [context.getHandler(), context.getClass()]) === true,
-    mapIdentity: () => {
-      const user = cls.get('user'); // established by your authentication integration
-      return user ? {
-        endUserToken: user.accessToken,
-        dataRoles: user.oracleRoles,
-        attributes: user.oracleAttributes,
-      } : null;
-    },
-  }),
-});
-```
-
-`DatabaseModule`, `ORACLE_POOL`, `IS_PUBLIC_KEY` and user field names are app-specific.
-Import `DeepSecModule` from `nestjs-oracledb-deepsec`, `ClsService` from `nestjs-cls`
-and `Reflector` from `@nestjs/core`. Initialize CLS once in the app; do not repeat
-`ClsModule.forRoot()` if it is already configured.
-
-Your existing pool provider and service injection token stay unchanged. The adapter
-returns that same pool through its optional `DEEPSEC_POOL` alias and never closes
-an application-owned pool. Keep its existing shutdown owner.
-
-**The existing pool must already be configured for DeepSec.** Register
-`oracledb/plugins/token/endUserSecurityProvider` before creating it and add
-`endUserSecParams` to its creation options. This adapter does not retrofit an
-already-created ordinary pool or inspect/patch its private provider fields.
-Mapping metadata into async context alone does not enable database enforcement.
-Restart/recreate the pool after changing its creation configuration.
-
-For the Azure OBO demo, `endUserSecParams` contains:
-
-```ts
-{
-  spiType: 'azure',
-  authFlow: 'onBehalfOf',
-  contextResolution: 'operation',
-  clientId: middleTierClientId,
-  clientSecret: middleTierClientSecret,
-  authority: tenantAuthority,
-  scopes: [databaseResourceScope],
-}
-```
-
-No demo authentication guard, Azure device login, UI or new route decorators are
-required for an app that already establishes the identity. If existing auth sets
-only `request.user`, omit CLS and read that object in `mapIdentity(request)`.
-Passport does not automatically retain the Azure access token; your auth/token
-store must make a suitable middle-tier access token available. An app's own session
-JWT is not necessarily an Azure OBO assertion.
-
-## Pool creation managed by the adapter
-
-Apps without a pool provider can supply `poolOptions` instead of `pool`:
+## Existing authenticated app
 
 ```ts
 DeepSecModule.forRoot({
   poolOptions: {
-    user, password, connectString,
-    endUserSecParams: { /* driver configuration as above */ },
+    ...yourOraclePoolOptions,
+    // Passed unchanged to the SHARED DRIVER; the driver owns OBO/token caching/EUSC.
+    endUserSecParams: {
+      spiType: 'azure', authFlow: 'onBehalfOf', contextResolution: 'operation',
+      clientId, clientSecret, authority, scopes,
+    },
   },
+  // Runs per protected request, AFTER your auth guard. request.user is YOUR
+  // convention, not a requirement of the adapter or evidence of Passport use.
   mapIdentity: request => request.user ? {
     endUserToken: request.user.accessToken,
+    dataRoles: request.user.oracleRoles,
+    attributes: request.user.oracleAttributes,
   } : null,
 });
 ```
 
-Inject `DEEPSEC_POOL` in this mode. The adapter creates the pool and closes it on
-application shutdown. Exactly one of `pool` or `poolOptions` is required. Both
-`forRoot` and `forRootAsync` support either source. Only one configured pool per
-module integration is currently supported.
+Your guard must authenticate/authorize the request before mapping. The callback
+must provide an ACCESS token suitable for the configured exchange. A username,
+session ID, ID token or JWT claims object alone is insufficient. Do not treat JWT
+decoding as signature/issuer/audience validation. Only use trusted app policy for
+roles/attributes. The adapter validates shape and takes a snapshot; it does not
+validate authentication cryptographically or grant database permissions.
 
-## Identity mapping and route policy
+## Other authentication setups
 
-The HTTP interceptor runs after authentication guards. It invokes
-`mapIdentity(request, executionContext)` once per protected request; the callback
-may be asynchronous and can read injected CLS or other request-local services.
-With `forRootAsync`, the configuration factory runs once at startup, so return a
-callback that reads identity later; do not capture a current user at startup.
-`imports`, `inject` and a sync/async `useFactory` are supported.
-
-A mapped identity requires a nonempty `endUserToken`; optional `dataRoles` is a
-string array and `attributes` is a JSON object. Use only authenticated identity
-and trusted application policy. The adapter checks shape and copies roles and
-attributes into the request scope. It does not validate JWT signatures or replace
-your authentication guard. Missing/malformed identity returns 401 before the
-handler. `mapIdentity` is required for both synchronous and asynchronous registration.
-There is no implicit bearer/session fallback, even when optional login is enabled.
-
-For existing Passport/CLS apps, keep your current authenticated-user mapper.
-For explicit token extraction, the package exports two small helpers:
+There is no required property name or storage library. Choose one integration:
 
 ```ts
-import { mapBearerIdentity, mapSessionIdentity } from 'nestjs-oracledb-deepsec';
+// Passport or a custom guard that sets request.user:
+mapIdentity: req => req.user ? { endUserToken: req.user.accessToken } : null
 
-// The app's guard must authenticate/authorize requests before mapping.
-DeepSecModule.forRoot({ poolOptions, mapIdentity: mapBearerIdentity });
+// Your own authentication guard uses a different request property:
+mapIdentity: req => req.auth?.principal
+  ? { endUserToken: req.auth.principal.accessToken } : null
 
-// Built-in Azure login with passportSession disabled: read its server-side session.
-DeepSecModule.forRoot({ poolOptions, azureLogin, mapIdentity: mapSessionIdentity });
+// App-owned server-side session, already authenticated and checked for expiry:
+mapIdentity: req => req.session?.account
+  ? { endUserToken: req.session.account.accessToken } : null
 ```
 
-The bearer helper checks syntax only; it does not verify signatures, audience,
-issuer or HTTP authorization. The session helper reads only `request.session.identity`,
-checks expiry, and ignores bearer headers. With `passportSession: true`, map the
-user restored by Passport instead, as in the demo. Neither helper selects another
-identity source when its expected identity is absent.
-
-Migration: configurations that previously relied on automatic bearer/session
-lookup must now set the corresponding helper explicitly. Existing custom mapper
-configurations and business handlers need no changes.
-
-`isPublic(executionContext)` reuses your app's existing public-route policy. It
-must return an explicit boolean (sync or async). Without it, all HTTP handlers
-require identity unless marked `@DeepSecPublic()`. That marker remains an explicit
-bypass even with a custom policy; `DEEPSEC_PUBLIC_ROUTE` exports its metadata key.
-Keep the app's auth guard and adapter policies consistent. Public handlers must
-not execute protected database work: skipping DeepSec does not itself prohibit
-ordinary database access outside a scope. Route policies are application-controlled,
-not derived from an unvalidated user header or missing identity.
-
-## Optional Azure device login
-
-Existing authenticated apps do not configure this. For the included demo, add
-`azureLogin` options; async configuration must also opt in to registering routes:
+For an existing CLS setup, inject its service once and read identity inside the
+per-request callback. Do not capture a user in the startup factory:
 
 ```ts
 DeepSecModule.forRootAsync({
-  enableAzureLogin: true,
-  inject: [ClsService],
-  useFactory: cls => ({
-    poolOptions,
-    azureLogin: {
-      clientId: userLoginClientId,
-      passportSession: true, // app supplies a Passport serializer and auth-to-CLS guard
-      authority: tenantAuthority,
-      scopes: [middleTierUserScope],
-      // networkClient,       // optional corporate-proxy MSAL client
-      // secureCookie: false, // local HTTP development only; default is true
+  imports: [ExistingDatabaseModule],
+  inject: [EXISTING_POOL, ClsService],
+  useFactory: (pool, cls) => ({
+    pool,
+    mapIdentity: () => {
+      const user = cls.get('user'); // Your guard placed a trusted user here.
+      return user ? { endUserToken: user.accessToken,
+        dataRoles: user.oracleRoles, attributes: user.oracleAttributes } : null;
     },
-    mapIdentity: () => mapDemoIdentity(cls),
   }),
 });
 ```
 
-For synchronous `forRoot`, supplying `azureLogin` is the opt-in. Without opt-in,
-none of `/deepsec/auth/start`, `/status` or `/logout` is registered. A mismatch
-between async opt-in and resolved login configuration fails at startup.
+The package does not import `nestjs-cls`; this is an application dependency only
+when the app chooses it. The repository's `examples/auth-configurations.ts`
+contains commented, type-checked request-user, custom-auth, server-session, CLS
+and async-resolver examples. Existing auth guards remain in place; no changes to
+every controller/service are required to pass identity arguments.
 
-When enabled, endpoints are:
+## Configuration and pool ownership
 
-- `POST /deepsec/auth/start`: starts device login, returning Microsoft's verification
-  URL/user code and setting an opaque HttpOnly SameSite=Strict cookie.
-- `GET /deepsec/auth/status`: reports signedOut, pending, authenticated or failed;
-  pending status includes the device code, authenticated status includes username.
-- `POST /deepsec/auth/logout`: cancels login/deletes the local session and clears
-  its cookie; this is not Microsoft-wide sign-out.
+`mapIdentity(request, executionContext)` is required, may be sync/async, and is
+called once per protected HTTP request. Return `{ endUserToken, dataRoles?,
+attributes? }` or null/undefined to reject. Missing/malformed identity returns 401
+before the handler, without trying headers or another session as a fallback.
 
-Tokens remain server-side. Auth responses use no-store; start/logout reject
-cross-origin requests. The app can inject exported `AzureLoginService` and call
-`tokenForRequest(request)` in its guard. It returns a token only for a nonexpired,
-authenticated session. Never return or log it. The demo's guard stores that identity
-in CLS; another app can keep its own guard. MSAL is an optional peer for this login
-feature (the driver's Azure extension also needs MSAL for OBO).
+Supply exactly one of `poolOptions` and `pool`. With `poolOptions`, the adapter
+creates the pool and drains/closes it on app shutdown. With `pool`, the app retains
+its existing pool injection and lifecycle. An existing pool must be created with
+DeepSec configured; this adapter cannot retrofit that setting. A supplied pool is
+not inspected through private driver properties. The app must enable Nest shutdown
+hooks if it wants signal-triggered pool shutdown.
 
-Optional login uses `express-session` for signed cookies and session storage,
-with a bounded `memorystore` (100 entries) for local development. A bounded TTL
-`lru-cache` holds only in-flight, nonserializable MSAL jobs. The UI status poll
-hands the completed login into the session before protected queries can run.
-No tokens are included in the browser cookie or returned by login endpoints.
+`endUserSecParams` is forwarded unchanged and checked by the driver. The adapter
+does not restrict provider configuration to Azure, although its current identity
+contract requires an end-user token and does not expose named-user/key contexts.
+The demo uses Azure OBO and published `oracledb@26.0.0`; provider/token compatibility
+is separate from supporting an application's authentication library.
 
-Supply `azureLogin.sessionStore` to use an external express-session store and
-`sessionSecret` for a stable signing secret. By default the secret is generated
-per process and sessions require sign-in after restart. Share the signing secret
-when sharing a store. Pending device jobs remain process-local and expire within
-ten minutes; replicas need affinity or further job coordination. Authenticated
-sessions expire no later than token expiry minus 30 seconds or one hour. No
-automatic token renewal is implemented. The adapter stops/clears only its owned
-local store on shutdown and leaves a supplied store's lifecycle to the app.
-The extra session/cache packages are optional peers used only by built-in login.
+`forRootAsync` supports `imports`, `inject` and factory-based `useFactory`. The
+factory runs at startup; the returned identity callback runs per request.
+
+## Public routes
+
+`@DeepSecPublic()` skips the adapter's identity scope. Or provide
+`isPublic(executionContext)` to read your app's existing public-route metadata.
+That callback must return an explicit boolean and can be asynchronous. The
+explicit decorator remains a bypass even with a custom callback.
+
+Keep authentication-guard and adapter route policies consistent. Skipped handlers
+must not execute protected SQL: skipping DeepSec does not prohibit ordinary DB
+login outside a scope. The demo's app-owned login endpoints and health endpoint
+are public, while `/api/query` is protected by the app's guard.
+
+## Application-owned Azure login in this demo
+
+The demo implements Azure device login in `src/auth/azure-login.ts` and mounts it
+through `src/auth/azure-auth.module.ts`. That app module owns MSAL, express-session,
+Passport restoration, cookies, expiry and cancellation. It is not part of this
+package or tarball. The app's guard then places Passport's user in CLS and its
+configured mapper passes only identity metadata to this adapter.
+
+Applications with existing authentication should keep it and supply the mapper.
+They do not need the demo's AzureAuthModule, Passport registration or CLS setup.
+An app whose own authentication uses a different token issuer must still obtain a
+token accepted by its configured downstream driver exchange.
 
 ## Context propagation and limits
 
-The interceptor subscribes to Nest's handler inside the driver's `runWithContext`
-scope and returns the subscription for error/cancellation teardown. The driver
-handles OBO and EUSC construction/installation. CLS holds application identity;
-the adapter does not create a second app CLS store or require CLS as a dependency.
+The interceptor subscribes inside the driver's async scope and returns the RxJS
+subscription for error/cancellation teardown. This covers ordinary awaited work
+and tested Observable lifecycles. It is an HTTP adapter: WebSockets, microservices,
+queues and streams consumed outside the subscription need their own scope and
+resource integration. Do not claim universal transport support or share one
+connection concurrently between different users.
 
-The demo explicitly configures `contextResolution: 'operation'`, following the
-review's recommended default for multi-user integration. The shared driver
-resolves identity before each supported operation, installs EUSC and clears it
-afterward. Its token extension can reuse cached tokens; each resolution does not
-necessarily contact Azure. The adapter does not override an explicitly selected
-mode or retrofit an existing pool. Configure the existing pool at creation time.
+The demo explicitly selects operation resolution. The driver resolves identity
+before supported operations and can reuse cached tokens. Connection resolution
+remains configurable for strictly request-scoped borrowing. Keep database work
+awaited and release borrowed connections.
 
-Connection resolution remains available for apps with strictly request-scoped
-borrowing. Neither mode permits concurrent connection sharing between users.
-Keep borrowing/releasing within the request and awaiting its database work.
-No changes to query methods or the shared driver are needed to select operation
-resolution. The demo pins published `oracledb@26.0.0`; the adapter's driver peer
-range is `^26.0.0`. No local driver checkout is required. Offline tests cover both
-modes, SQL-error cleanup, identity isolation and token replacement when the token
-helper reports `isNewToken: true`.
+Published 26.0.0 has a cache limitation: within one async scope, when the DB token
+changes but the token helper reports `isNewToken: false`, the provider can reuse
+the old encoded EUSC. The desired-behavior regression runs as an explicit
+TODO/expected failure. Normal refresh with `isNewToken: true` is covered.
 
-Published 26.0.0 has a separate cache limitation: within one async scope, if a DB
-token changes but the token helper reports `isNewToken: false` (a cache hit), the
-provider reuses the previous encoded EUSC. The desired-behavior regression test
-still runs as an explicit TODO/expected failure. This is not a passing guarantee
-of cached-token refresh correctness. Keep request scopes short; applications
-requiring that scenario need a driver release that fixes it. The adapter does not
-patch driver internals or silently change the configured resolution mode.
+A separate provider-failure cleanup defect can cause both execute and close to
+return NJS-198 before underlying release. Both resolution modes are affected.
+Diagnostic tests reproduce that failure, not correct cleanup. No shared driver
+files are modified and the adapter does not patch driver internals.
 
-An independent shared-driver cleanup defect remains: initial OBO failure can
-cause both execute and close to return NJS-198 before the underlying release
-runs. Both modes are affected. Diagnostic tests reproduce this known failure;
-they do not certify correct provider-failure cleanup. The driver is unchanged.
-Background jobs, non-HTTP transports and streams consumed after the handler
-subscription need explicit scope/resource integration.
+## Build and package
 
-NestJS, RxJS and oracledb are peers so the app and adapter share the driver instance.
-No SQL, app credentials or corporate proxy addresses are hardcoded in the package.
+Maintainers edit TypeScript in `src/`. `npm run build` cleans `dist/` and generates
+JavaScript/declarations. Cleaning ensures removed authentication artifacts do not
+survive in a tarball. `npm pack` builds before packing. Consumers install compiled
+output; they need no TypeScript/plugin build step or install/prepare hook.
 
+Nest, RxJS and node-oracledb are peers so the app and adapter share instances.
+The package has no Passport, CLS, MSAL, Express or session dependency. The shared
+driver may separately require MSAL when its Azure provider is selected by the app.
 
-### Standard Passport session integration
+The demo's `npm test` builds the plugin/app, type-checks integration examples and
+runs offline tests. Coverage includes app-owned Azure/Passport sessions, real
+Passport bearer-strategy execution without CLS, custom sessions without Passport
+or CLS, existing pools/public policies, concurrency, missing identity and Observable
+teardown. Packed-consumer checks block authentication-library imports and confirm
+that no login files/endpoints remain in the core package. These are not live
+Azure/Oracle authorization-policy tests.
 
-The included demo sets `azureLogin.passportSession: true` and registers its
-`AzureSessionSerializer` with `PassportModule.register({ session: true })`.
-Built-in login then mounts session middleware, Passport initialization and
-Passport session restoration in that order. The status endpoint calls `req.logIn`
-when MSAL completes; Passport regenerates the ID and serializes the user into the
-server-side session store. Logout calls `req.logOut` before destroying the session.
-The app's serializer controls the persisted fields and token-expiry checks.
-No access token is included in the browser cookie. Existing authenticated apps
-should retain their own session middleware and serializer and omit built-in login.
+## Migration from the previous branch
 
-
-## Building and packaging
-
-The maintained implementation is TypeScript in `src/`. `npm run build` in this
-package generates JavaScript and declarations together in `dist/`; do not edit
-generated files. The demo's root `npm run build` builds the plugin before the app.
-
-Run `npm pack` in this package to build and create a tarball. Only compiled output,
-package metadata and documentation are packaged. Applications install that tarball
-(or a future published version) and use JavaScript directly; they do not need
-TypeScript or a plugin build step. There is no consumer install/prepare hook.
-Existing root and named subpath imports are preserved through package exports.
-
-`npm test` from the demo runs the offline integration suite and checks the packed
-artifact from JavaScript and TypeScript consumers. The consumer check validates
-generated declarations with library checking enabled and verifies invalid identity
-configuration is rejected by the type checker.
+Remove `azureLogin`/`enableAzureLogin` from DeepSecModule configuration. Move that
+configuration and its auth module into the application, as the demo now does.
+Keep `mapIdentity`; existing app-owned mapper callbacks and query handlers remain
+unchanged. Package exports for AzureLoginService, login helpers and errorDetails
+have been removed. Diagnostics now live in `src/error-details.ts`, owned by the
+application. Do not import the demo's authentication code into the portable adapter.

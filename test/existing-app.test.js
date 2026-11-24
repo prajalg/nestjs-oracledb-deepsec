@@ -144,18 +144,11 @@ test('existing pool, business handlers, CLS and public-route metadata work witho
   assert.equal(closes, 1, 'only the application owner closes the pool');
 });
 
-test('ambiguous pool sources and accidental async login registration are rejected', async () => {
+test('ambiguous pool sources are rejected', () => {
   const pool = { getConnection() {}, close() {} };
   assert.throws(() => DeepSecModule.forRoot({ pool, poolOptions }), /exactly one/);
   assert.throws(() => DeepSecModule.forRoot({}), /exactly one/);
   assert.throws(() => DeepSecModule.forRoot({ pool: {} }), /existing configured Oracle pool/);
-  const bridge = DeepSecModule.forRootAsync({
-    useFactory: () => ({ pool, mapIdentity: () => null, azureLogin: { clientId: 'test' } }),
-  });
-  class InvalidAppModule {}
-  Module({ imports: [bridge] })(InvalidAppModule);
-  await assert.rejects(NestFactory.create(InvalidAppModule, { logger: false, abortOnError: false }),
-    /enableAzureLogin/);
 });
 
 test('route policy must explicitly return a boolean and cannot accidentally bypass identity', async () => {

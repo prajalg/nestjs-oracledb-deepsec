@@ -22,38 +22,54 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
     assert.ok(packed.files.some(file => file.path === 'dist/index.js'));
     assert.ok(packed.files.some(file => file.path === 'dist/index.d.ts'));
     assert.ok(!packed.files.some(file => file.path.startsWith('src/')));
+    assert.ok(!packed.files.some(file => /azure-login|error-details|identity-mappers/.test(file.path)));
     run('tar', ['-xzf', join(temporary, packed.filename)]);
     const manifest = JSON.parse(readFileSync(join(temporary, 'package/package.json'), 'utf8'));
+    for (const name of ['passport', 'nestjs-cls', '@azure/msal-node', 'express-session', 'memorystore', 'lru-cache']) {
+      assert.equal(manifest.dependencies?.[name], undefined);
+      assert.equal(manifest.peerDependencies?.[name], undefined);
+    }
     for (const hook of ['install', 'postinstall', 'prepare']) assert.equal(manifest.scripts?.[hook], undefined);
 
     // Supply peers already installed by the demo, excluding its linked plugin and compiler.
     const { mkdirSync } = require('node:fs');
     mkdirSync(join(temporary, 'node_modules'));
     for (const name of readdirSync(join(root, 'node_modules'))) {
-      if (['nestjs-oracledb-deepsec', 'typescript', '.bin'].includes(name)) continue;
+      if (['nestjs-oracledb-deepsec', 'typescript', '.bin', 'passport', 'express-session', 'memorystore', 'lru-cache', 'nestjs-cls'].includes(name)) continue;
       symlinkSync(join(root, 'node_modules', name), join(temporary, 'node_modules', name));
     }
     symlinkSync(join(temporary, 'package'), join(temporary, 'node_modules/nestjs-oracledb-deepsec'));
     writeFileSync(join(temporary, 'consumer.cjs'), `
       const assert = require('node:assert/strict');
+      const Module = require('node:module');
+      const originalLoad = Module._load;
+      Module._load = function (name, ...args) {
+        if (/passport|nestjs-cls|express-session|memorystore|msal|lru-cache/.test(name))
+          throw new Error('Core must not load app authentication: ' + name);
+        return originalLoad.call(this, name, ...args);
+      };
       const plugin = require('nestjs-oracledb-deepsec');
       assert.equal(typeof plugin.DeepSecModule.forRoot, 'function');
-      assert.deepEqual(plugin.mapBearerIdentity({headers:{authorization:'Bearer fixture'}}), {endUserToken:'fixture'});
-      for (const name of ['azure-login', 'error-details', 'identity-mappers', 'tokens'])
-        assert.ok(require('nestjs-oracledb-deepsec/' + name));
+      assert.ok(require('nestjs-oracledb-deepsec/tokens'));
+      const pool = { getConnection() {}, close() {} };
+      const definition = plugin.DeepSecModule.forRoot({pool, mapIdentity: () => null});
+      assert.ok(!definition.controllers?.length);
+      assert.equal(plugin.AzureLoginService, undefined);
+      assert.throws(() => require('nestjs-oracledb-deepsec/azure-login'), {code:'ERR_PACKAGE_PATH_NOT_EXPORTED'});
     `);
     run(process.execPath, ['consumer.cjs']);
     writeFileSync(join(temporary, 'consumer.ts'), `
-      import { DeepSecModule, mapBearerIdentity, mapSessionIdentity, type DeepSecOptions } from 'nestjs-oracledb-deepsec';
+      import { DeepSecModule, type DeepSecOptions } from 'nestjs-oracledb-deepsec';
       import type { Pool } from 'oracledb';
-      import { errorDetails } from 'nestjs-oracledb-deepsec/error-details';
       declare const pool: Pool;
-      const options: DeepSecOptions = { pool, mapIdentity: mapBearerIdentity };
+      const mapIdentity = () => ({endUserToken: "fixture"});
+      const options: DeepSecOptions = { pool, mapIdentity };
       DeepSecModule.forRoot(options);
-      DeepSecModule.forRootAsync({ useFactory: async () => ({pool, mapIdentity: mapSessionIdentity}) });
+      DeepSecModule.forRootAsync({ useFactory: async () => ({pool, mapIdentity}) });
       DeepSecModule.forRoot<{ user: { token: string } }>({ pool,
         mapIdentity: request => ({endUserToken: request.user.token}) });
-      errorDetails(new Error('fixture'));
+      // @ts-expect-error Login is owned by the app, not configured on the plugin.
+      DeepSecModule.forRoot({pool, mapIdentity, azureLogin: {clientId:'fixture'}});
       // @ts-expect-error The mapper is required.
       DeepSecModule.forRoot({pool});
       // @ts-expect-error Token metadata must have a string token.

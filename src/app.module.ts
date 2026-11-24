@@ -1,7 +1,6 @@
 import { Module, OnApplicationShutdown } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { PassportModule } from '@nestjs/passport';
-import { AzureSessionSerializer } from './azure-session.serializer';
+import { AzureAuthModule } from './auth/azure-auth.module';
 import { ClsModule, ClsService } from 'nestjs-cls';
 import { AzureSessionGuard, DemoAuthStore, mapDemoIdentity } from './azure-session.guard';
 import { DeepSecModule } from 'nestjs-oracledb-deepsec';
@@ -18,22 +17,23 @@ const networkClient = createAzureNetworkClient();
 
 @Module({
   imports: [
-    PassportModule.register({ session: true }),
+    // Demo-owned sign-in. Existing apps replace this module with their own auth.
+    AzureAuthModule.forRoot({
+      clientId: required('AZURE_USER_CLIENT_ID'),
+      authority: required('AZURE_USER_AUTHORITY'),
+      scopes: required('AZURE_USER_SCOPES').split(/[\s,]+/).filter(Boolean),
+      networkClient,
+      passportSession: true,
+      secureCookie: false, // localhost HTTP only; use true with HTTPS
+    }),
     ClsModule.forRoot({ global: true, middleware: { mount: true } }),
     DeepSecModule.forRootAsync({
-      enableAzureLogin: true,
       inject: [ClsService],
       useFactory: (cls: ClsService<DemoAuthStore>) => ({
+        // Called per protected request AFTER the app guard. Pass only identity
+        // metadata to the driver; login credentials/session objects stay app-side.
+        // Without CLS, use: req => req.user ? { endUserToken: req.user.accessToken } : null
         mapIdentity: () => mapDemoIdentity(cls),
-        // Optional plugin-owned Azure login obtains the user token for this demo.
-        azureLogin: {
-          clientId: required('AZURE_USER_CLIENT_ID'),
-          authority: required('AZURE_USER_AUTHORITY'),
-          scopes: required('AZURE_USER_SCOPES').split(/[\s,]+/).filter(Boolean),
-          networkClient,
-          passportSession: true,
-          secureCookie: false, // localhost HTTP only; use true with HTTPS
-        },
         poolOptions: {
           user: required('NODE_ORACLEDB_USER'),
           password: required('NODE_ORACLEDB_PASSWORD'),
@@ -42,6 +42,8 @@ const networkClient = createAzureNetworkClient();
           walletPassword: process.env.NODE_ORACLEDB_WALLET_PASSWORD || undefined,
           poolMin: 0, poolMax: 4, poolIncrement: 1,
           queueTimeout: 10000, connectTimeout: 10,
+          // Forwarded unchanged to node-oracledb's SHARED plugin. These are
+          // middle-tier/DB exchange credentials, not interactive login settings.
           endUserSecParams: {
             spiType: 'azure',
             authFlow: 'onBehalfOf',
@@ -58,7 +60,7 @@ const networkClient = createAzureNetworkClient();
     }),
   ],
   controllers: [AppController],
-  providers: [DatabaseService, AzureSessionSerializer,
+  providers: [DatabaseService,
     { provide: APP_GUARD, useClass: AzureSessionGuard }],
 })
 export class AppModule implements OnApplicationShutdown {

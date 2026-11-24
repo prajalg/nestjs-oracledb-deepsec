@@ -5,9 +5,25 @@ import { Controller, Get, Post, Req, Res, Header, ForbiddenException, HttpExcept
 import type { Request, Response, CookieOptions, RequestHandler } from 'express';
 import type { Store } from 'express-session';
 import type { LRUCache } from 'lru-cache';
-import type { AzureLoginOptions } from './options';
-import { errorDetails, type ErrorDetails } from './error-details';
-import { DeepSecPublic } from './tokens';
+import { errorDetails, type ErrorDetails } from '../error-details';
+import { DeepSecPublic } from 'nestjs-oracledb-deepsec';
+
+// Demo-owned Azure authentication. Existing applications keep their own auth
+// library and expose identity through DeepSecModule.mapIdentity instead.
+export interface AzureLoginOptions {
+  clientId: string;
+  authority: string;
+  scopes: string[];
+  networkClient?: unknown;
+  /** Optional persistent session signing secret. Default is random per process. */
+  sessionSecret?: string;
+  /** Optional Passport session restoration; the app supplies its serializer. */
+  passportSession?: boolean;
+  /** An express-session compatible server-side store. Local default is bounded memory. */
+  sessionStore?: unknown;
+  /** Defaults to true. Set false only for local HTTP development. */
+  secureCookie?: boolean;
+}
 
 interface SessionIdentity { token: string; expiresAt: number; username?: string }
 interface LoginUser { accessToken: string; expiresAt: number; username?: string }

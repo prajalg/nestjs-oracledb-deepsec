@@ -10,8 +10,9 @@
     "build": "npm run build:plugin && tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/main.js",
     "dev": "npm run build && npm start",
-    "test": "npm run build && node --test test/*.test.js",
-    "build:plugin": "npm --prefix packages/nestjs-deepsec run build"
+    "test": "npm run build && npm run typecheck:examples && node --test test/*.test.js",
+    "build:plugin": "npm --prefix packages/nestjs-deepsec run build",
+    "typecheck:examples": "tsc -p examples/tsconfig.json"
   },
   "dependencies": {
     "@azure/msal-node": "^3.0.0",

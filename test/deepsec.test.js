@@ -4,13 +4,17 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { Module } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
 const oracledb = require('oracledb');
-const { DeepSecModule, DEEPSEC_POOL, mapBearerIdentity } = require('nestjs-oracledb-deepsec');
+const { DeepSecModule, DEEPSEC_POOL } = require('nestjs-oracledb-deepsec');
 const { DatabaseService } = require('../dist/database.service');
 const { AppController } = require('../dist/app.controller');
 const contextProvider = oracledb.getSecurityContextProvider();
 
 const options = {
-  mapIdentity: mapBearerIdentity,
+  // Fixture-only extraction; production apps supply an authenticated identity.
+  mapIdentity: request => {
+    const match = /^Bearer\s+(\S+)$/i.exec(request.headers.authorization || '');
+    return match ? { endUserToken: match[1] } : null;
+  },
   poolOptions: {
     user: 'test', password: 'test', connectString: 'localhost:1521/test', poolMin: 0,
     endUserSecParams: {

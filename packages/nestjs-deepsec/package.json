@@ -14,32 +14,10 @@
     "@nestjs/core": "^11.0.0",
     "oracledb": "^26.0.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1",
-    "@azure/msal-node": "^3.0.0",
-    "express-session": "^1.19.0",
-    "memorystore": "^1.6.8",
-    "lru-cache": "^11.5.3",
-    "passport": "^0.7.0"
-  },
-  "peerDependenciesMeta": {
-    "@azure/msal-node": {
-      "optional": true
-    },
-    "express-session": {
-      "optional": true
-    },
-    "memorystore": {
-      "optional": true
-    },
-    "lru-cache": {
-      "optional": true
-    },
-    "passport": {
-      "optional": true
-    }
+    "rxjs": "^7.8.1"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', {recursive:true, force:true})\" && tsc -p tsconfig.json",
     "prepack": "npm run build"
   },
   "exports": {
@@ -47,21 +25,6 @@
       "types": "./dist/index.d.ts",
       "require": "./dist/index.js",
       "default": "./dist/index.js"
-    },
-    "./azure-login": {
-      "types": "./dist/azure-login.d.ts",
-      "require": "./dist/azure-login.js",
-      "default": "./dist/azure-login.js"
-    },
-    "./error-details": {
-      "types": "./dist/error-details.d.ts",
-      "require": "./dist/error-details.js",
-      "default": "./dist/error-details.js"
-    },
-    "./identity-mappers": {
-      "types": "./dist/identity-mappers.d.ts",
-      "require": "./dist/identity-mappers.js",
-      "default": "./dist/identity-mappers.js"
     },
     "./tokens": {
       "types": "./dist/tokens.d.ts",
@@ -74,22 +37,10 @@
     "@types/node": "^22.0.0"
   },
   "dependencies": {
-    "@types/express": "^5.0.0",
-    "@types/express-session": "1.19.0",
-    "@types/passport": "1.0.17",
     "@types/oracledb": "^6.10.0"
   },
   "typesVersions": {
     "*": {
-      "azure-login": [
-        "dist/azure-login.d.ts"
-      ],
-      "error-details": [
-        "dist/error-details.d.ts"
-      ],
-      "identity-mappers": [
-        "dist/identity-mappers.d.ts"
-      ],
       "tokens": [
         "dist/tokens.d.ts"
       ]

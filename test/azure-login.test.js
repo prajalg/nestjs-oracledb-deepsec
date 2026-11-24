@@ -2,14 +2,13 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { promisify } = require('node:util');
 const { Module } = require('@nestjs/common');
-const { PassportModule } = require('@nestjs/passport');
-const { AzureSessionSerializer } = require('../dist/azure-session.serializer');
 const { ClsModule, ClsService } = require('nestjs-cls');
 const { setTimeout: delay } = require('node:timers/promises');
 const { NestFactory, APP_GUARD } = require('@nestjs/core');
 const oracledb = require('oracledb');
 const { DeepSecModule, DEEPSEC_POOL } = require('nestjs-oracledb-deepsec');
-const { AzureLoginService } = require('nestjs-oracledb-deepsec/azure-login');
+const { AzureLoginService } = require('../dist/auth/azure-login');
+const { AzureAuthModule } = require('../dist/auth/azure-auth.module');
 const { AppController } = require('../dist/app.controller');
 const { DatabaseService } = require('../dist/database.service');
 const { AzureSessionGuard, mapDemoIdentity } = require('../dist/azure-session.guard');
@@ -61,10 +60,8 @@ async function createApp(login, azureLogin = loginOptions, connectionError) {
     async close() {},
   };
   const bridge = DeepSecModule.forRootAsync({
-    enableAzureLogin: Boolean(azureLogin),
     inject: [ClsService],
     useFactory: async cls => ({
-      azureLogin,
       mapIdentity: request => {
         assert.equal(request.isAuthenticated(), true, 'real Passport authenticates before mapping');
         assert.equal(request.user, cls.get('user'), 'Passport user is bridged into CLS');
@@ -75,12 +72,14 @@ async function createApp(login, azureLogin = loginOptions, connectionError) {
   });
   bridge.providers = bridge.providers.map(provider => {
     if (provider.provide === DEEPSEC_POOL) return { provide: DEEPSEC_POOL, useValue: pool };
-    if (provider.provide === AzureLoginService) return { provide: AzureLoginService, useValue: login };
     return provider;
   });
+  const auth = azureLogin ? AzureAuthModule.forRoot(azureLogin) : null;
+  if (auth) auth.providers = auth.providers.map(provider =>
+    provider.provide === AzureLoginService ? { provide: AzureLoginService, useValue: login } : provider);
   class TestModule {}
-  Module({ imports: [PassportModule.register({ session: true }), ClsModule.forRoot({ global: true, middleware: { mount: true } }), bridge],
-    controllers: [AppController], providers: [DatabaseService, AzureSessionSerializer,
+  Module({ imports: [...(auth ? [auth] : []), ClsModule.forRoot({ global: true, middleware: { mount: true } }), bridge],
+    controllers: [AppController], providers: [DatabaseService,
     { provide: APP_GUARD, useClass: AzureSessionGuard }] })(TestModule);
   const app = await NestFactory.create(TestModule, { logger: false });
   await app.listen(0, '127.0.0.1');
