@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { errorDetails } = require('../dist/error-details');
+const { errorDetails } = require('../dist/shared/error-details');
 
 test('nested provider diagnostics retain actionable messages and redact secret values', () => {
   process.env.TEST_DIAGNOSTIC_CLIENT_SECRET = 'fixture-environment-secret';

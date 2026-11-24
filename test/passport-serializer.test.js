@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { AzureSessionSerializer } = require('../dist/azure-session.serializer');
+const { AzureSessionSerializer } = require('../dist/auth/azure-session.serializer');
 
 test('Passport serializer persists only the minimal server-side identity', () => {
   const serializer = new AzureSessionSerializer();

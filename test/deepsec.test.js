@@ -5,8 +5,8 @@ const { Module } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
 const oracledb = require('oracledb');
 const { DeepSecModule, DEEPSEC_POOL } = require('nestjs-oracledb-deepsec');
-const { DatabaseService } = require('../dist/database.service');
-const { AppController } = require('../dist/app.controller');
+const { EmployeesService } = require('../dist/employees/employees.service');
+const { EmployeesController } = require('../dist/employees/employees.controller');
 const contextProvider = oracledb.getSecurityContextProvider();
 
 const options = {
@@ -73,7 +73,7 @@ test('HTTP requests use isolated real driver scopes; missing tokens fail before 
   bridge.providers = bridge.providers.map(provider => provider.provide === DEEPSEC_POOL
     ? { provide: DEEPSEC_POOL, useValue: pool } : provider);
   class TestModule {}
-  Module({ imports: [bridge], controllers: [AppController], providers: [DatabaseService] })(TestModule);
+  Module({ imports: [bridge], controllers: [EmployeesController], providers: [EmployeesService] })(TestModule);
   const app = await NestFactory.create(TestModule, { logger: false });
   try {
     await app.listen(0, '127.0.0.1');
@@ -158,7 +158,7 @@ test('guard identities map into isolated driver scopes with no raw-header fallba
     ? { provide: DEEPSEC_POOL, useValue: pool } : provider);
   const { APP_GUARD } = require('@nestjs/core');
   class TestModule {}
-  Module({ imports: [bridge], controllers: [AppController], providers: [DatabaseService,
+  Module({ imports: [bridge], controllers: [EmployeesController], providers: [EmployeesService,
     { provide: APP_GUARD, useClass: FixtureGuard }] })(TestModule);
   const app = await NestFactory.create(TestModule, { logger: false });
   try {

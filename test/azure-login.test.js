@@ -9,9 +9,9 @@ const oracledb = require('oracledb');
 const { DeepSecModule, DEEPSEC_POOL } = require('nestjs-oracledb-deepsec');
 const { AzureLoginService } = require('../dist/auth/azure-login');
 const { AzureAuthModule } = require('../dist/auth/azure-auth.module');
-const { AppController } = require('../dist/app.controller');
-const { DatabaseService } = require('../dist/database.service');
-const { AzureSessionGuard, mapDemoIdentity } = require('../dist/azure-session.guard');
+const { EmployeesController } = require('../dist/employees/employees.controller');
+const { EmployeesService } = require('../dist/employees/employees.service');
+const { AzureSessionGuard, mapDemoIdentity } = require('../dist/auth/azure-session.guard');
 
 const loginOptions = {
   clientId: 'test-public-client', authority: 'https://login.microsoftonline.com/test',
@@ -79,7 +79,7 @@ async function createApp(login, azureLogin = loginOptions, connectionError) {
     provider.provide === AzureLoginService ? { provide: AzureLoginService, useValue: login } : provider);
   class TestModule {}
   Module({ imports: [...(auth ? [auth] : []), ClsModule.forRoot({ global: true, middleware: { mount: true } }), bridge],
-    controllers: [AppController], providers: [DatabaseService,
+    controllers: [EmployeesController], providers: [EmployeesService,
     { provide: APP_GUARD, useClass: AzureSessionGuard }] })(TestModule);
   const app = await NestFactory.create(TestModule, { logger: false });
   await app.listen(0, '127.0.0.1');

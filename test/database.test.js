@@ -1,10 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { DatabaseService, DEMO_QUERY } = require('../dist/database.service');
+const { EmployeesService, DEMO_QUERY } = require('../dist/employees/employees.service');
 
 test('returns employee rows and releases the borrowed connection', async () => {
   let closed = 0;
-  const service = new DatabaseService();
+  const service = new EmployeesService();
   service.pool = { getConnection: async () => ({
     execute: async (sql, binds) => {
       assert.equal(sql, DEMO_QUERY);
@@ -24,7 +24,7 @@ test('returns employee rows and releases the borrowed connection', async () => {
 
 test('releases on SQL failure and returns a diagnostic without sensitive details', async () => {
   let closed = 0;
-  const service = new DatabaseService();
+  const service = new EmployeesService();
   service.pool = { getConnection: async () => ({
     execute: async () => { throw Object.assign(new Error('ORA-01017: invalid username/password; logon denied'), { code: 'ORA-01017' }); },
     close: async () => { closed++; },
@@ -39,7 +39,7 @@ test('releases on SQL failure and returns a diagnostic without sensitive details
 });
 
 test('reports connection failure without attempting to close an unborrowed connection', async () => {
-  const service = new DatabaseService();
+  const service = new EmployeesService();
   service.pool = { getConnection: async () => { throw new Error('unreachable'); } };
   await assert.rejects(service.runQuery(), error => error.getStatus() === 503);
 });

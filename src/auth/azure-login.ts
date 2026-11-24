@@ -5,7 +5,7 @@ import { Controller, Get, Post, Req, Res, Header, ForbiddenException, HttpExcept
 import type { Request, Response, CookieOptions, RequestHandler } from 'express';
 import type { Store } from 'express-session';
 import type { LRUCache } from 'lru-cache';
-import { errorDetails, type ErrorDetails } from '../error-details';
+import { errorDetails, type ErrorDetails } from '../shared/error-details';
 import { DeepSecPublic } from 'nestjs-oracledb-deepsec';
 
 // Demo-owned Azure authentication. Existing applications keep their own auth

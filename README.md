@@ -28,6 +28,32 @@ server restart, the default in-memory sessions require sign-in again. Stop a
 foreground server with Ctrl+C. The UI supports full-width tables, horizontal
 scrolling, padding and confirmation before logout.
 
+## App structure
+
+```text
+src/
+  main.ts                       # Start the HTTP server
+  app.module.ts                 # Connect auth, DeepSec and employees
+  auth/                         # Sign-in and authenticated identity
+    azure-auth.module.ts        # Register login routes and middleware
+    azure-login.ts              # Azure device login, sessions and logout
+    azure-session.serializer.ts # Save/restore the Passport user
+    azure-session.guard.ts      # Require sign-in and map identity for DeepSec
+    azure-network.ts            # Azure proxy networking
+  employees/                    # Basic employee query and API
+    employees.controller.ts     # GET /api/health and GET /api/query
+    employees.service.ts        # Borrow connection, query employees, release
+  shared/
+    error-details.ts            # Format/redact errors for UI responses
+public/                         # Browser UI
+packages/nestjs-deepsec/         # Independent reusable adapter
+```
+
+For a walkthrough, start at `src/app.module.ts`. Follow `auth/` for sign-in
+and identity mapping, then `employees/` for the ordinary database query. The
+composition in `app.module.ts` supplies that identity callback and the driver
+configuration to the adapter; employee handlers receive no token arguments.
+
 ## Code ownership
 
 | Location | Responsibility |
@@ -36,12 +62,13 @@ scrolling, padding and confirmation before logout.
 | `packages/nestjs-deepsec/src/options.ts` | Authentication-library-independent mapping/pool contracts |
 | `src/auth/azure-auth.module.ts` | App-owned login routes and session/Passport middleware registration |
 | `src/auth/azure-login.ts` | App-owned MSAL device login, session store, expiry, polling handoff and logout |
-| `src/azure-session.serializer.ts` | Save/restore the minimal server-side Passport identity |
-| `src/azure-session.guard.ts` | App authentication policy and authenticated-user-to-CLS bridge/mapping |
+| `src/auth/azure-session.serializer.ts` | Save/restore the minimal server-side Passport identity |
+| `src/auth/azure-session.guard.ts` | App authentication policy and authenticated-user-to-CLS bridge/mapping |
 | `src/app.module.ts` | Configures app auth separately, then passes its identity callback and pool settings to DeepSec |
-| `src/azure-network.ts` | App-specific corporate proxy bridge |
-| `src/error-details.ts` | App-owned diagnostic messages and best-effort redaction for the UI |
-| `src/database.service.ts` | Ordinary getConnection/execute/close, with the fixed employee query |
+| `src/auth/azure-network.ts` | App-specific corporate proxy bridge |
+| `src/shared/error-details.ts` | App-owned diagnostic messages and best-effort redaction for the UI |
+| `src/employees/employees.controller.ts` | Employee query API and public health endpoint |
+| `src/employees/employees.service.ts` | Ordinary getConnection/execute/close, with the fixed employee query |
 | `public/` | Simple sign-in/employee UI; access tokens are never returned to it |
 | `packages/nestjs-deepsec/examples/auth-configurations.ts` | Commented, type-checked examples for alternative auth setups |
 

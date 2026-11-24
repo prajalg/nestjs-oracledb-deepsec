@@ -1,10 +1,10 @@
 import { Controller, Get, Header } from '@nestjs/common';
 import { DeepSecPublic } from 'nestjs-oracledb-deepsec';
-import { DatabaseService, DEMO_QUERY } from './database.service';
+import { EmployeesService, DEMO_QUERY } from './employees.service';
 
 @Controller('api')
-export class AppController {
-  constructor(private readonly database: DatabaseService) {}
+export class EmployeesController {
+  constructor(private readonly database: EmployeesService) {}
 
   @DeepSecPublic()
   @Get('health')

@@ -2,11 +2,11 @@ import { Module, OnApplicationShutdown } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AzureAuthModule } from './auth/azure-auth.module';
 import { ClsModule, ClsService } from 'nestjs-cls';
-import { AzureSessionGuard, DemoAuthStore, mapDemoIdentity } from './azure-session.guard';
+import { AzureSessionGuard, DemoAuthStore, mapDemoIdentity } from './auth/azure-session.guard';
 import { DeepSecModule } from 'nestjs-oracledb-deepsec';
-import { AppController } from './app.controller';
-import { DatabaseService } from './database.service';
-import { createAzureNetworkClient } from './azure-network';
+import { EmployeesController } from './employees/employees.controller';
+import { EmployeesService } from './employees/employees.service';
+import { createAzureNetworkClient } from './auth/azure-network';
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -59,8 +59,8 @@ const networkClient = createAzureNetworkClient();
       }),
     }),
   ],
-  controllers: [AppController],
-  providers: [DatabaseService,
+  controllers: [EmployeesController],
+  providers: [EmployeesService,
     { provide: APP_GUARD, useClass: AzureSessionGuard }],
 })
 export class AppModule implements OnApplicationShutdown {

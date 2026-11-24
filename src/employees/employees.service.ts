@@ -2,7 +2,7 @@ import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common'
 import * as oracledb from 'oracledb';
 import { DEEPSEC_POOL } from 'nestjs-oracledb-deepsec';
 import { performance } from 'node:perf_hooks';
-import { errorDetails } from './error-details';
+import { errorDetails } from '../shared/error-details';
 
 export const DEMO_QUERY = `SELECT *
 FROM hr.employees
@@ -10,7 +10,7 @@ ORDER BY employee_id
 FETCH FIRST 100 ROWS ONLY`;
 
 @Injectable()
-export class DatabaseService {
+export class EmployeesService {
   constructor(@Inject(DEEPSEC_POOL) private readonly pool: oracledb.Pool) {}
 
   async runQuery() {

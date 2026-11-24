@@ -1,6 +1,6 @@
 import { Module, type DynamicModule, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
-import { AzureSessionSerializer } from '../azure-session.serializer';
+import { AzureSessionSerializer } from './azure-session.serializer';
 import { AzureLoginController, AzureLoginService, type AzureLoginOptions } from './azure-login';
 
 // Authentication belongs to this demo, not to the DeepSec package. This module
