@@ -43,7 +43,7 @@ scrolling, padding and confirmation before logout.
 | `src/error-details.ts` | App-owned diagnostic messages and best-effort redaction for the UI |
 | `src/database.service.ts` | Ordinary getConnection/execute/close, with the fixed employee query |
 | `public/` | Simple sign-in/employee UI; access tokens are never returned to it |
-| `examples/auth-configurations.ts` | Commented, type-checked examples for alternative auth setups |
+| `packages/nestjs-deepsec/examples/auth-configurations.ts` | Commented, type-checked examples for alternative auth setups |
 
 ## Use the adapter in another app
 
@@ -53,7 +53,7 @@ server-side session or existing CLS service. The callback maps an access token,
 optional trusted roles and attributes to driver metadata. The adapter does not
 require Passport, CLS, Azure login, Express sessions or the demo's identity shape.
 
-See `packages/nestjs-deepsec/README.md` and `examples/auth-configurations.ts`.
+See `packages/nestjs-deepsec/README.md` and `packages/nestjs-deepsec/examples/auth-configurations.ts`.
 The adapter is currently for Nest HTTP handlers; queues/other transports need
 separate integration. An authenticated user ID alone is not enough for Azure OBO:
 the application must retain an appropriate end-user access token.
@@ -77,4 +77,9 @@ A successful query alone does not verify row/column policy isolation across user
 
 The plugin is maintained in TypeScript and ships compiled JavaScript/declarations
 via `npm pack`. Consumer applications need no plugin compilation step. Only core
-adapter output and documentation are included; app authentication stays in this repo.
+adapter output, examples and documentation are included; app authentication stays in this repo.
+
+`npm run test:plugin` runs only the package-owned tests and example checks.
+Demo-only authentication, SQL-service and UI tests remain in root `test/`.
+Package tests, examples and their READMEs live beside the plugin source; the npm
+tarball includes `examples/` for consumers and excludes contributor `test/` files.

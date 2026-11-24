@@ -2,13 +2,16 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
-const { join, resolve } = require('node:path');
+const { join, resolve, dirname } = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 // Exercise the tarball as a consumer, so source-tree resolution cannot hide
 // missing compiled files, exports or declaration dependencies.
 test('packed plugin works in JavaScript and exposes checked TypeScript declarations', () => {
-  const root = resolve(__dirname, '..');
+  const packageRoot = resolve(__dirname, '..');
+  // Works with package-local or hoisted dev dependencies; no demo paths required.
+  const dependencyRoot = dirname(dirname(require.resolve('typescript/package.json')));
+  const compiler = require.resolve('typescript/bin/tsc');
   const temporary = mkdtempSync(join(tmpdir(), 'deepsec-package-'));
   const run = (command, args, cwd = temporary) => {
     const result = spawnSync(command, args, { cwd, encoding: 'utf8', timeout: 30000 });
@@ -18,11 +21,14 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
   try {
     // npm test builds first; skip scripts here to avoid rebuilding during parallel tests.
     const [packed] = JSON.parse(run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary],
-      join(root, 'packages/nestjs-deepsec')));
+      packageRoot));
     assert.ok(packed.files.some(file => file.path === 'dist/index.js'));
     assert.ok(packed.files.some(file => file.path === 'dist/index.d.ts'));
     assert.ok(!packed.files.some(file => file.path.startsWith('src/')));
-    assert.ok(!packed.files.some(file => /azure-login|error-details|identity-mappers/.test(file.path)));
+    assert.ok(packed.files.some(file => file.path === 'examples/auth-configurations.ts'));
+    assert.ok(packed.files.some(file => file.path === 'examples/README.md'));
+    assert.ok(!packed.files.some(file => file.path.startsWith('test/')));
+    assert.ok(!packed.files.some(file => /^dist\/(azure-login|error-details|identity-mappers)[.]/.test(file.path)));
     run('tar', ['-xzf', join(temporary, packed.filename)]);
     const manifest = JSON.parse(readFileSync(join(temporary, 'package/package.json'), 'utf8'));
     for (const name of ['passport', 'nestjs-cls', '@azure/msal-node', 'express-session', 'memorystore', 'lru-cache']) {
@@ -34,9 +40,9 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
     // Supply peers already installed by the demo, excluding its linked plugin and compiler.
     const { mkdirSync } = require('node:fs');
     mkdirSync(join(temporary, 'node_modules'));
-    for (const name of readdirSync(join(root, 'node_modules'))) {
+    for (const name of readdirSync(dependencyRoot)) {
       if (['nestjs-oracledb-deepsec', 'typescript', '.bin', 'passport', 'express-session', 'memorystore', 'lru-cache', 'nestjs-cls'].includes(name)) continue;
-      symlinkSync(join(root, 'node_modules', name), join(temporary, 'node_modules', name));
+      symlinkSync(join(dependencyRoot, name), join(temporary, 'node_modules', name));
     }
     symlinkSync(join(temporary, 'package'), join(temporary, 'node_modules/nestjs-oracledb-deepsec'));
     writeFileSync(join(temporary, 'consumer.cjs'), `
@@ -77,10 +83,10 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
       // @ts-expect-error Only factory-based async configuration is supported.
       DeepSecModule.forRootAsync({});
     `);
-    run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict',
+    run(process.execPath, [compiler, '--noEmit', '--strict',
       '--skipLibCheck', 'false', '--types', 'node', '--esModuleInterop', '--target', 'ES2022',
       '--module', 'Node16', '--moduleResolution', 'Node16', 'consumer.ts']);
-    run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict',
+    run(process.execPath, [compiler, '--noEmit', '--strict',
       '--skipLibCheck', 'false', '--types', 'node', '--esModuleInterop', '--target', 'ES2022',
       '--module', 'commonjs', '--moduleResolution', 'node', 'consumer.ts']);
   } finally { rmSync(temporary, { recursive: true, force: true }); }

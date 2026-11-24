@@ -75,7 +75,7 @@ DeepSecModule.forRootAsync({
 ```
 
 The package does not import `nestjs-cls`; this is an application dependency only
-when the app chooses it. The repository's `examples/auth-configurations.ts`
+when the app chooses it. The package's `examples/auth-configurations.ts`
 contains commented, type-checked request-user, custom-auth, server-session, CLS
 and async-resolver examples. Existing auth guards remain in place; no changes to
 every controller/service are required to pass identity arguments.
@@ -160,7 +160,7 @@ survive in a tarball. `npm pack` builds before packing. Consumers install compil
 output; they need no TypeScript/plugin build step or install/prepare hook.
 
 Nest, RxJS and node-oracledb are peers so the app and adapter share instances.
-The package has no Passport, CLS, MSAL, Express or session dependency. The shared
+The runtime package has no Passport, CLS, MSAL, Express or session dependency. The shared
 driver may separately require MSAL when its Azure provider is selected by the app.
 
 The demo's `npm test` builds the plugin/app, type-checks integration examples and
@@ -179,3 +179,19 @@ Keep `mapIdentity`; existing app-owned mapper callbacks and query handlers remai
 unchanged. Package exports for AzureLoginService, login helpers and errorDetails
 have been removed. Diagnostics now live in `src/error-details.ts`, owned by the
 application. Do not import the demo's authentication code into the portable adapter.
+
+## Package-local examples and tests
+
+`examples/auth-configurations.ts` is included in the npm tarball so application
+developers can inspect/copy the integration pattern that matches their setup.
+See `examples/README.md`; examples never become runtime dependencies of the core.
+
+From this directory, contributors run `npm install` then `npm test`. The package
+builds itself, type-checks examples and runs its own `test/` suite independently
+of the demo app. Test-only Passport, CLS, session and MSAL packages are dev
+dependencies; they are not runtime dependencies or required peers. The example
+that uses CLS requires CLS in the consuming app only if that example is chosen.
+
+`test/README.md` describes coverage and known driver limitations. Contributor
+tests are available in the source repository, excluded from the npm tarball.
+Root `npm test` runs package checks first, followed by demo-only tests.
