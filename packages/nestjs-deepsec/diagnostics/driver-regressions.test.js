@@ -89,9 +89,7 @@ test('operation mode resolves each execute and clears EUSC before returning to t
   assert.equal(contextProvider.getCurrentContext(), null);
 });
 
-test('operation mode replaces EUSC if the token extension returns a refreshed cached DB token', {
-  todo: 'Published oracledb 26.0.0 reuses EUSC when a changed DB token is marked as a cache hit',
-}, async t => {
+test('operation mode replaces EUSC if the token extension returns a refreshed cached DB token', async t => {
   const f = await fixture(t, { exchange: (_request, count) => ({
     accessToken: count === 1 ? 'fixture-old-db-token' : 'fixture-refreshed-db-token',
     isNewToken: false,
@@ -101,7 +99,7 @@ test('operation mode replaces EUSC if the token extension returns a refreshed ca
     await connection.execute('first');
     await connection.execute('second');
     await connection.execute('third');
-    assert.notEqual(f.installed[0], f.installed[1]);
+    assert.ok(f.installed[0] !== f.installed[1], 'Changed database token must produce a new EUSC');
     assert.equal(f.installed[1], f.installed[2]);
     assert.equal(f.impl.securityContext, null);
     await connection.close();
@@ -118,7 +116,7 @@ test('operation mode replaces EUSC when the token helper reports a newly acquire
     await connection.execute('first');
     await connection.execute('second');
     await connection.execute('third');
-    assert.notEqual(f.installed[0], f.installed[1]);
+    assert.ok(f.installed[0] !== f.installed[1], 'Changed database token must produce a new EUSC');
     assert.equal(f.installed[1], f.installed[2]);
     assert.equal(f.impl.securityContext, null);
     await connection.close();
@@ -160,20 +158,19 @@ test('sequential borrowers get separate operation contexts and unscoped work inh
 });
 
 for (const mode of ['connection', 'operation']) {
-  test(`known driver defect (${mode}): initial OBO failure prevents close/release`, async t => {
+  test(`driver cleanup (${mode}): connection release succeeds after initial OBO failure`, async t => {
     const f = await fixture(t, { mode, exchange: () => {
       throw Object.assign(new Error('fixture: expired client credential'), { errorCode: 'invalid_client' });
     } });
     const connection = f.borrow();
     await contextProvider.runWithContext({ endUserToken: 'user-a' }, async () => {
       await assert.rejects(connection.execute('must not execute'), { code: 'NJS-198' });
-      await assert.rejects(connection.close(), { code: 'NJS-198' });
+      await connection.close();
     });
-    // Diagnostic assertions record the unfixed bug, not desired lifecycle behavior.
-    // Once the shared driver is fixed, replace these with successful-close assertions.
-    assert.equal(f.exchanges.length, 2);
+    // Desired cleanup contract: releasing a failed operation must not reacquire OBO.
+    assert.equal(f.exchanges.length, 1);
     assert.equal(f.executed.length, 0);
-    assert.equal(f.releases, 0, 'known defect: the close body was never reached');
+    assert.equal(f.releases, 1, 'The failed operation must still release its connection');
     assert.equal(f.impl.securityContext, null);
     assert.equal(f.impl._inProgress, false);
     assert.equal(contextProvider.getCurrentContext(), null);
@@ -199,7 +196,7 @@ test('connection mode resolves once per borrow and isolates sequential request b
     assert.equal(contextProvider.getCurrentContext(), null);
   }
   assert.equal(f.installed.length, 2);
-  assert.notEqual(f.installed[0], f.installed[1]);
+  assert.ok(f.installed[0] !== f.installed[1], 'Changed database token must produce a new EUSC');
   assert.deepEqual(f.exchanges.map(request => request.endUserToken), ['user-a', 'user-b']);
   assert.equal(f.releases, 2);
 });

@@ -144,12 +144,13 @@ awaited and release borrowed connections.
 
 Published 26.0.0 has a cache limitation: within one async scope, when the DB token
 changes but the token helper reports `isNewToken: false`, the provider can reuse
-the old encoded EUSC. The desired-behavior regression runs as an explicit
-TODO/expected failure. Normal refresh with `isNewToken: true` is covered.
+the old encoded EUSC. An opt-in upstream diagnostic asserts the desired replacement behavior and fails
+on this driver. It is outside the adapter release suite; the limitation remains
+part of driver compatibility, not a fixed or passing guarantee.
 
 A separate provider-failure cleanup defect can cause both execute and close to
 return NJS-198 before underlying release. Both resolution modes are affected.
-Diagnostic tests reproduce that failure, not correct cleanup. No shared driver
+Opt-in diagnostics assert correct cleanup and fail while this defect remains. No shared driver
 files are modified and the adapter does not patch driver internals.
 
 ## Build and package
@@ -164,10 +165,10 @@ The runtime package has no Passport, CLS, MSAL, Express or session dependency. T
 driver may separately require MSAL when its Azure provider is selected by the app.
 
 The demo's `npm test` builds the plugin/app, type-checks integration examples and
-runs offline tests. Coverage includes app-owned Azure/Passport sessions, real
+runs the public adapter tests. Coverage includes app-owned Azure/Passport sessions, real
 Passport bearer-strategy execution without CLS, custom sessions without Passport
 or CLS, existing pools/public policies, concurrency, missing identity and Observable
-teardown. Packed-consumer checks block authentication-library imports and confirm
+teardown through Nest HTTP applications. Packed-consumer checks run without optional authentication libraries and confirm
 that no login files/endpoints remain in the core package. These are not live
 Azure/Oracle authorization-policy tests.
 
@@ -192,6 +193,16 @@ of the demo app. Test-only Passport, CLS, session and MSAL packages are dev
 dependencies; they are not runtime dependencies or required peers. The example
 that uses CLS requires CLS in the consuming app only if that example is chosen.
 
-`test/README.md` describes coverage and known driver limitations. Contributor
-tests are available in the source repository, excluded from the npm tarball.
+`test/README.md` describes the public contract suite: `npm test` exercises normal
+assertions, and the suite contains no TODOs/skips. `prepublishOnly` runs that same suite.
 Root `npm test` runs package checks first, followed by demo-only tests.
+
+Driver-internal regressions live in `diagnostics/`, outside default test discovery.
+Run `npm run test:driver-diagnostics` explicitly; it asserts desired driver behavior
+and currently fails on the documented upstream defects. This separation does not
+remove or fix those compatibility limits. Both `test/` and `diagnostics/` stay in
+source control and are excluded from the npm tarball. See their READMEs.
+
+The package remains marked `private: true` to prevent accidental publication.
+`npm pack` produces the installable artifact; actual npm publication requires
+intentional publication metadata/ownership decisions as well as passing checks.

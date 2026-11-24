@@ -67,9 +67,11 @@ npm test
 This builds TypeScript, checks developer examples, runs offline auth/adapter/driver
 component tests and validates the packed core without auth-library imports.
 Published `oracledb@26.0.0` is installed; no local driver checkout is required.
-The changed-cached-token EUSC regression remains an explicit TODO/expected failure.
-The provider-failure cleanup defect is also reproduced in both resolution modes.
-See the package README; a passing diagnostic test does not mean that defect is fixed.
+The default plugin suite tests public adapter behavior. Its current tests all
+pass with zero TODOs or skips. Upstream driver regressions are preserved separately under the
+plugin's `diagnostics/` directory. `npm run test:driver-diagnostics` there is an
+explicit investigation command and currently fails on known 26.0.0 cache/cleanup
+defects. See the package README; a clean adapter suite does not fix those defects.
 
 The live employee flow must be checked separately with valid Azure credentials
 and the intended database policies. Test tokens are fixtures, not live credentials.

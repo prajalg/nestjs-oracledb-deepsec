@@ -27,7 +27,7 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
     assert.ok(!packed.files.some(file => file.path.startsWith('src/')));
     assert.ok(packed.files.some(file => file.path === 'examples/auth-configurations.ts'));
     assert.ok(packed.files.some(file => file.path === 'examples/README.md'));
-    assert.ok(!packed.files.some(file => file.path.startsWith('test/')));
+    assert.ok(!packed.files.some(file => /^(test|diagnostics)\//.test(file.path)));
     assert.ok(!packed.files.some(file => /^dist\/(azure-login|error-details|identity-mappers)[.]/.test(file.path)));
     run('tar', ['-xzf', join(temporary, packed.filename)]);
     const manifest = JSON.parse(readFileSync(join(temporary, 'package/package.json'), 'utf8'));
@@ -40,20 +40,26 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
     // Supply peers already installed by the demo, excluding its linked plugin and compiler.
     const { mkdirSync } = require('node:fs');
     mkdirSync(join(temporary, 'node_modules'));
+    const excluded = new Set(['nestjs-oracledb-deepsec', 'typescript', '.bin',
+      'passport', 'express-session', 'memorystore', 'lru-cache', 'nestjs-cls', '@azure']);
     for (const name of readdirSync(dependencyRoot)) {
-      if (['nestjs-oracledb-deepsec', 'typescript', '.bin', 'passport', 'express-session', 'memorystore', 'lru-cache', 'nestjs-cls'].includes(name)) continue;
-      symlinkSync(join(dependencyRoot, name), join(temporary, 'node_modules', name));
+      if (excluded.has(name)) continue;
+      if (name === '@nestjs') {
+        mkdirSync(join(temporary, 'node_modules', name));
+        for (const child of readdirSync(join(dependencyRoot, name))) {
+          if (child === 'passport') continue;
+          symlinkSync(join(dependencyRoot, name, child), join(temporary, 'node_modules', name, child));
+        }
+      } else symlinkSync(join(dependencyRoot, name), join(temporary, 'node_modules', name));
     }
     symlinkSync(join(temporary, 'package'), join(temporary, 'node_modules/nestjs-oracledb-deepsec'));
     writeFileSync(join(temporary, 'consumer.cjs'), `
       const assert = require('node:assert/strict');
-      const Module = require('node:module');
-      const originalLoad = Module._load;
-      Module._load = function (name, ...args) {
-        if (/passport|nestjs-cls|express-session|memorystore|msal|lru-cache/.test(name))
-          throw new Error('Core must not load app authentication: ' + name);
-        return originalLoad.call(this, name, ...args);
-      };
+      // Missing optional auth packages are verified by normal Node resolution,
+      // without intercepting private module-loader methods.
+      for (const name of ['passport', '@nestjs/passport', 'nestjs-cls',
+        'express-session', '@azure/msal-node', 'memorystore', 'lru-cache'])
+        assert.throws(() => require.resolve(name), {code:'MODULE_NOT_FOUND'});
       const plugin = require('nestjs-oracledb-deepsec');
       assert.equal(typeof plugin.DeepSecModule.forRoot, 'function');
       assert.ok(require('nestjs-oracledb-deepsec/tokens'));
@@ -64,6 +70,14 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
       assert.throws(() => require('nestjs-oracledb-deepsec/azure-login'), {code:'ERR_PACKAGE_PATH_NOT_EXPORTED'});
     `);
     run(process.execPath, ['consumer.cjs']);
+    writeFileSync(join(temporary, 'consumer.mjs'), `
+      import assert from 'node:assert/strict';
+      import { DeepSecModule, DeepSecPublic, DEEPSEC_POOL } from 'nestjs-oracledb-deepsec';
+      assert.equal(typeof DeepSecModule.forRoot, 'function');
+      assert.equal(typeof DeepSecPublic, 'function');
+      assert.equal(typeof DEEPSEC_POOL, 'symbol');
+    `);
+    run(process.execPath, ['consumer.mjs']);
     writeFileSync(join(temporary, 'consumer.ts'), `
       import { DeepSecModule, type DeepSecOptions } from 'nestjs-oracledb-deepsec';
       import type { Pool } from 'oracledb';

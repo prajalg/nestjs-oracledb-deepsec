@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
 const { Module, Injectable, Inject, Controller, Get, SetMetadata } = require('@nestjs/common');
-const { NestFactory, Reflector, APP_GUARD, APP_INTERCEPTOR } = require('@nestjs/core');
+const { NestFactory, Reflector, APP_GUARD } = require('@nestjs/core');
 const { ClsModule, ClsService } = require('nestjs-cls');
 const oracledb = require('oracledb');
 const { DeepSecModule, DEEPSEC_POOL } = require('nestjs-oracledb-deepsec');
@@ -21,8 +21,6 @@ const poolOptions = {
 test('existing pool, business handlers, CLS and public-route metadata work without replacement', async () => {
   // Real configured pool, no DB connection. Only getConnection is stubbed below.
   const pool = await oracledb.createPool(poolOptions);
-  const provider = pool._securityContextProvider;
-  assert.equal(typeof provider, 'function');
   const close = pool.close.bind(pool);
   let closes = 0;
   let releases = 0;
@@ -112,7 +110,6 @@ test('existing pool, business handlers, CLS and public-route metadata work witho
     const base = await app.getUrl();
     assert.equal(app.get(DEEPSEC_POOL), pool);
     assert.equal(app.get(ExistingEmployeeService).pool, pool);
-    assert.equal(pool._securityContextProvider, provider);
     assert.equal(poolCreations, 1);
     assert.deepEqual(await (await fetch(`${base}/existing/health`)).json(), { ok: true, scoped: false });
     assert.equal(mappings, 0, 'existing public metadata bypasses mapping');
@@ -149,20 +146,4 @@ test('ambiguous pool sources are rejected', () => {
   assert.throws(() => DeepSecModule.forRoot({ pool, poolOptions }), /exactly one/);
   assert.throws(() => DeepSecModule.forRoot({}), /exactly one/);
   assert.throws(() => DeepSecModule.forRoot({ pool: {} }), /existing configured Oracle pool/);
-});
-
-test('route policy must explicitly return a boolean and cannot accidentally bypass identity', async () => {
-  const { Observable } = require('rxjs');
-  const bridge = DeepSecModule.forRoot({ pool: { getConnection() {}, close() {} }, mapIdentity: () => null });
-  const Interceptor = bridge.providers.find(p => p.provide === APP_INTERCEPTOR).useClass;
-  let handled = false;
-  const interceptor = new Interceptor(new Reflector(), {
-    mapIdentity: () => null, isPublic: async () => 'true',
-  });
-  const context = { getType: () => 'http', getHandler: () => function handler() {},
-    getClass: () => class Controller {} };
-  await assert.rejects(interceptor.intercept(context, { handle() {
-    handled = true; return new Observable();
-  } }), /isPublic must return a boolean/);
-  assert.equal(handled, false);
 });

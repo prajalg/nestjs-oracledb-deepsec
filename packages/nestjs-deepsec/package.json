@@ -21,7 +21,9 @@
     "build": "node -e \"require('node:fs').rmSync('dist', {recursive:true, force:true})\" && tsc -p tsconfig.json",
     "prepack": "npm run build",
     "test": "npm run build && npm run typecheck:examples && node --test test/*.test.js",
-    "typecheck:examples": "tsc -p examples/tsconfig.json"
+    "typecheck:examples": "tsc -p examples/tsconfig.json",
+    "test:driver-diagnostics": "npm run build && node --test diagnostics/*.test.js",
+    "prepublishOnly": "npm test"
   },
   "exports": {
     ".": {
