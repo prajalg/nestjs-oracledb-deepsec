@@ -1,114 +1,43 @@
-# NestJS Oracle employee demo
+# NestJS + Oracle
 
-This demo reads all columns from `HR.EMPLOYEES`, ordered by employee ID and limited
-to 100 rows. Its Azure sign-in is application code. The reusable DeepSec package
-accepts a trusted identity callback and establishes the driver's security scope.
+A small NestJS app with Azure device-code login, Passport sessions and CLS.
+Azure authenticates the app user. Its access token stays in the server-side
+session and request-local CLS; database creation and queries never receive it.
+Oracle connects using the normal database username/password and optional wallet.
 
-```text
-App-owned Azure device login -> app session/Passport -> app authentication guard
--> app CLS user -> mapIdentity -> DeepSec adapter -> node-oracledb OBO/EUSC
--> unchanged database query -> employee table
-```
-
-## Run locally
+## Run
 
 ```sh
 npm install
+# Fill in .env using .env.example; keep credentials out of git.
 npm run dev
 ```
 
-Use the ignored `.env` for database/wallet, Azure and optional proxy settings;
-`.env.example` lists names. No credentials or tokens should be committed or logged.
-Open the URL printed by the app, sign in with Azure, and click **Load employees**.
-The current local configuration uses HTTP and `secureCookie: false`; the login
-service defaults to secure cookies for HTTPS. No deployment is performed.
+Open the printed URL. Sign in, then load employees or database time. Stop with
+Ctrl+C. Azure login uses `/auth/start`, `/auth/status` and `/auth/logout`.
+The local app uses HTTP and in-memory sessions; restarting signs everyone out.
 
-`npm run build` builds plugin then app. `npm start` starts compiled code. After
-server restart, the default in-memory sessions require sign-in again. Stop a
-foreground server with Ctrl+C. The UI supports full-width tables, horizontal
-scrolling, padding and confirmation before logout.
+## Code
 
-## App structure
+- `src/auth/`: Azure login, Passport session restoration and authentication guard.
+- `src/app.module.ts`: register auth, CLS and the app-owned Oracle pool.
+- `src/database/oracle-options.ts`: ordinary Oracle credentials and wallet settings.
+- `src/database/oracle-pool.ts`: create the pool; AppModule closes it on shutdown.
+- `src/employees/`: authenticated route, borrow a connection, query all employee columns, release.
+- `src/database/standalone.*`: authenticated route, open a standalone connection, query database time, close.
+- `src/health.controller.ts`: public health endpoint, no database call.
+- `public/`: simple UI with a wide results table and logout confirmation.
 
-```text
-src/
-  main.ts                       # Start the HTTP server
-  app.module.ts                 # Connect auth, DeepSec and employees
-  auth/                         # Sign-in and authenticated identity
-    azure-auth.module.ts        # Register login routes and middleware
-    azure-login.ts              # Azure device login, sessions and logout
-    azure-session.serializer.ts # Save/restore the Passport user
-    azure-session.guard.ts      # Require sign-in and map identity for DeepSec
-    azure-network.ts            # Azure proxy networking
-  employees/                    # Basic employee query and API
-    employees.controller.ts     # GET /api/health and GET /api/query
-    employees.service.ts        # Borrow connection, query employees, release
-  shared/
-    error-details.ts            # Format/redact errors for UI responses
-public/                         # Browser UI
-packages/nestjs-deepsec/         # Independent reusable adapter
-```
+The guard stores the authenticated user in CLS. Asynchronous work in that request
+can read it without passing the user through every function. Database services
+need only ordinary node-oracledb calls and know nothing about user access tokens.
 
-For a walkthrough, start at `src/app.module.ts`. Follow `auth/` for sign-in
-and identity mapping, then `employees/` for the ordinary database query. The
-composition in `app.module.ts` supplies that identity callback and the driver
-configuration to the adapter; employee handlers receive no token arguments.
-
-## Code ownership
-
-| Location | Responsibility |
-| --- | --- |
-| `packages/nestjs-deepsec/src/index.ts` | Adapter registration, mapper validation, driver request scope and owned-pool shutdown |
-| `packages/nestjs-deepsec/src/options.ts` | Authentication-library-independent mapping/pool contracts |
-| `src/auth/azure-auth.module.ts` | App-owned login routes and session/Passport middleware registration |
-| `src/auth/azure-login.ts` | App-owned MSAL device login, session store, expiry, polling handoff and logout |
-| `src/auth/azure-session.serializer.ts` | Save/restore the minimal server-side Passport identity |
-| `src/auth/azure-session.guard.ts` | App authentication policy and authenticated-user-to-CLS bridge/mapping |
-| `src/app.module.ts` | Configures app auth separately, then passes its identity callback and pool settings to DeepSec |
-| `src/auth/azure-network.ts` | App-specific corporate proxy bridge |
-| `src/shared/error-details.ts` | App-owned diagnostic messages and best-effort redaction for the UI |
-| `src/employees/employees.controller.ts` | Employee query API and public health endpoint |
-| `src/employees/employees.service.ts` | Ordinary getConnection/execute/close, with the fixed employee query |
-| `public/` | Simple sign-in/employee UI; access tokens are never returned to it |
-| `packages/nestjs-deepsec/examples/auth-configurations.ts` | Commented, type-checked examples for alternative auth setups |
-
-## Use the adapter in another app
-
-Keep the application's current authentication module/guard. Configure one
-`mapIdentity` callback that reads its trusted request user, custom auth property,
-server-side session or existing CLS service. The callback maps an access token,
-optional trusted roles and attributes to driver metadata. The adapter does not
-require Passport, CLS, Azure login, Express sessions or the demo's identity shape.
-
-See `packages/nestjs-deepsec/README.md` and `packages/nestjs-deepsec/examples/auth-configurations.ts`.
-The adapter is currently for Nest HTTP handlers; queues/other transports need
-separate integration. An authenticated user ID alone is not enough for Azure OBO:
-the application must retain an appropriate end-user access token.
-
-## Validation and driver limits
+## Tests
 
 ```sh
 npm test
 ```
 
-This builds TypeScript, checks developer examples, runs offline auth/adapter/driver
-component tests and validates the packed core without auth-library imports.
-Published `oracledb@26.0.0` is installed; no local driver checkout is required.
-The default plugin suite tests public adapter behavior. Its current tests all
-pass with zero TODOs or skips. Upstream driver regressions are preserved separately under the
-plugin's `diagnostics/` directory. `npm run test:driver-diagnostics` there is an
-explicit investigation command and currently fails on known 26.0.0 cache/cleanup
-defects. See the package README; a clean adapter suite does not fix those defects.
-
-The live employee flow must be checked separately with valid Azure credentials
-and the intended database policies. Test tokens are fixtures, not live credentials.
-A successful query alone does not verify row/column policy isolation across users.
-
-The plugin is maintained in TypeScript and ships compiled JavaScript/declarations
-via `npm pack`. Consumer applications need no plugin compilation step. Only core
-adapter output, examples and documentation are included; app authentication stays in this repo.
-
-`npm run test:plugin` runs only the package-owned tests and example checks.
-Demo-only authentication, SQL-service and UI tests remain in root `test/`.
-Package tests, examples and their READMEs live beside the plugin source; the npm
-tarball includes `examples/` for consumers and excludes contributor `test/` files.
+Offline tests cover login/session lifecycle, concurrent CLS users, unauthenticated
+requests, query errors, connection release and UI diagnostics. External Azure and
+Oracle I/O is stubbed. Live database permissions are those of the database user.

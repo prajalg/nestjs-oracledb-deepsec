@@ -1,16 +1,11 @@
-import { Controller, Get, Header } from '@nestjs/common';
-import { DeepSecPublic } from 'nestjs-oracledb-deepsec';
-import { EmployeesService, DEMO_QUERY } from './employees.service';
+import { Controller, Get, Header, UseGuards } from '@nestjs/common';
+import { AzureSessionGuard } from '../auth/azure-session.guard';
+import { EmployeesService } from './employees.service';
 
 @Controller('api')
+@UseGuards(AzureSessionGuard)
 export class EmployeesController {
   constructor(private readonly database: EmployeesService) {}
-
-  @DeepSecPublic()
-  @Get('health')
-  health() {
-    return { application: 'ok', query: DEMO_QUERY };
-  }
 
   @Get('query')
   @Header('Cache-Control', 'no-store')

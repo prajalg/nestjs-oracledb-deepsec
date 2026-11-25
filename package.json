@@ -2,18 +2,15 @@
   "name": "nestjs-oracledb",
   "version": "1.0.0",
   "private": true,
-  "description": "NestJS demo using a minimal portable DeepSec module",
+  "description": "Simple NestJS Oracle app with Azure login and request-local CLS",
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
-    "build": "npm run build:plugin && tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', {recursive:true, force:true})\" && tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/main.js",
     "dev": "npm run build && npm start",
-    "test": "npm run test:plugin && tsc -p tsconfig.json && node --test test/*.test.js",
-    "build:plugin": "npm --prefix packages/nestjs-deepsec run build",
-    "typecheck:examples": "npm --prefix packages/nestjs-deepsec run typecheck:examples",
-    "test:plugin": "npm --prefix packages/nestjs-deepsec test"
+    "test": "npm run build && node --test test/*.test.js"
   },
   "dependencies": {
     "@azure/msal-node": "^3.0.0",
@@ -25,7 +22,6 @@
     "lru-cache": "11.5.3",
     "memorystore": "1.6.8",
     "nestjs-cls": "7.0.2",
-    "nestjs-oracledb-deepsec": "file:packages/nestjs-deepsec",
     "oracledb": "26.0.0",
     "passport": "0.7.0",
     "reflect-metadata": "^0.2.2",

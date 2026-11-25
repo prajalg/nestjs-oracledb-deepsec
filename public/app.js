@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const button = $('run');
+const standaloneButton = $('standalone');
 function errorMessage(data, fallback = 'Request failed') {
   return [data.code, data.message || fallback].filter(Boolean).join(': ');
 }
@@ -23,21 +24,23 @@ async function initialize() {
     status('Application unavailable', 'error');
   }
 }
-button.addEventListener('click', async () => {
+async function runQuery(endpoint, label) {
   button.disabled = true;
+  standaloneButton.disabled = true;
   button.textContent = 'Connecting…';
   $('results').hidden = true;
   $('empty').hidden = true;
   $('error').hidden = true;
-  status('Loading employees…');
+  status('Loading…');
   try {
-    const response = await fetch('/api/query');
+    const response = await fetch(endpoint);
     if (response.status === 401) {
       await refreshLogin();
       throw new Error('Sign in with Azure to run the query.');
     }
     const data = await response.json();
     if (!response.ok) throw new Error(errorMessage(data));
+    $('sql').textContent = data.sql;
     $('duration').textContent = `${data.durationMs} ms`;
     $('count').textContent = String(data.rows.length);
     const header = document.createElement('tr');
@@ -58,20 +61,23 @@ button.addEventListener('click', async () => {
       return tr;
     }));
     $('results').hidden = false;
-    status(data.rows.length ? 'Employees loaded' : 'No employees visible', 'success');
+    status(data.rows.length ? label : 'No rows returned', 'success');
   } catch (error) {
     $('error').textContent = error.message;
     $('error').hidden = false;
     status('Connection failed', 'error');
   } finally {
     button.disabled = !signedIn;
+    standaloneButton.disabled = !signedIn;
     button.textContent = 'Load employees';
   }
-});
+}
+button.addEventListener('click', () => runQuery('/api/query', 'Employees loaded'));
+standaloneButton.addEventListener('click', () => runQuery('/api/standalone', 'Database time loaded'));
 let signedIn = false;
 let pollTimer;
 async function refreshLogin() {
-  const response = await fetch('/deepsec/auth/status');
+  const response = await fetch('/auth/status');
   if (!response.ok) throw new Error('Sign-in service unavailable');
   const data = await response.json();
   signedIn = data.state === 'authenticated';
@@ -79,6 +85,7 @@ async function refreshLogin() {
   $('login').hidden = signedIn;
   $('logout').hidden = !signedIn;
   button.disabled = !signedIn;
+  standaloneButton.disabled = !signedIn;
   $('account').textContent = signedIn ? (data.username || 'Signed in') : 'Not signed in';
   if (signedIn) {
     clearTimeout(pollTimer);
@@ -114,7 +121,7 @@ $('login').addEventListener('click', async () => {
   $('error').hidden = true;
   status('Starting sign-in…');
   try {
-    const response = await fetch('/deepsec/auth/start', { method: 'POST' });
+    const response = await fetch('/auth/start', { method: 'POST' });
     const data = await response.json();
     if (!response.ok) throw new Error(errorMessage(data, 'Could not start sign-in'));
     $('verification').href = data.verificationUri;
@@ -133,7 +140,7 @@ $('logout').addEventListener('click', async () => {
   if (!window.confirm('Are you sure you want to sign out?')) return;
   clearTimeout(pollTimer);
   try {
-    const response = await fetch('/deepsec/auth/logout', { method: 'POST' });
+    const response = await fetch('/auth/logout', { method: 'POST' });
     if (!response.ok) throw new Error('Sign-out failed');
     $('results').hidden = true;
     $('error').hidden = true;

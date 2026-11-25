@@ -6,10 +6,8 @@ import type { Request, Response, CookieOptions, RequestHandler } from 'express';
 import type { Store } from 'express-session';
 import type { LRUCache } from 'lru-cache';
 import { errorDetails, type ErrorDetails } from '../shared/error-details';
-import { DeepSecPublic } from 'nestjs-oracledb-deepsec';
 
-// Demo-owned Azure authentication. Existing applications keep their own auth
-// library and expose identity through DeepSecModule.mapIdentity instead.
+// Application-owned Azure device-code login and server-side sessions.
 export interface AzureLoginOptions {
   clientId: string;
   authority: string;
@@ -49,7 +47,7 @@ type ClientFactory = () => {
   acquireTokenByDeviceCode(request: DeviceCodeRequest): Promise<LoginResult | null>;
 };
 
-const COOKIE = 'deepsec_session';
+const COOKIE = 'oracle_session';
 const PENDING_MS = 10 * 60 * 1000;
 // express-session and its stores expose callback methods.
 const invoke = (object: object, method: string): Promise<void> =>
@@ -227,8 +225,7 @@ export class AzureLoginService implements OnApplicationShutdown {
   }
 }
 
-@Controller('deepsec/auth')
-@DeepSecPublic()
+@Controller('auth')
 export class AzureLoginController {
   constructor(private readonly login: AzureLoginService) {}
 

@@ -1,12 +1,15 @@
-import { Module, OnApplicationShutdown } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { Module, Inject, OnApplicationShutdown } from '@nestjs/common';
+import { ClsModule } from 'nestjs-cls';
+import type { Pool } from 'oracledb';
 import { AzureAuthModule } from './auth/azure-auth.module';
-import { ClsModule, ClsService } from 'nestjs-cls';
-import { AzureSessionGuard, DemoAuthStore, mapDemoIdentity } from './auth/azure-session.guard';
-import { DeepSecModule } from 'nestjs-oracledb-deepsec';
+import { AzureSessionGuard } from './auth/azure-session.guard';
+import { createAzureNetworkClient } from './auth/azure-network';
+import { ORACLE_POOL, createOraclePool } from './database/oracle-pool';
+import { StandaloneController } from './database/standalone.controller';
+import { StandaloneService } from './database/standalone.service';
 import { EmployeesController } from './employees/employees.controller';
 import { EmployeesService } from './employees/employees.service';
-import { createAzureNetworkClient } from './auth/azure-network';
+import { HealthController } from './health.controller';
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -17,52 +20,27 @@ const networkClient = createAzureNetworkClient();
 
 @Module({
   imports: [
-    // Demo-owned sign-in. Existing apps replace this module with their own auth.
     AzureAuthModule.forRoot({
       clientId: required('AZURE_USER_CLIENT_ID'),
       authority: required('AZURE_USER_AUTHORITY'),
       scopes: required('AZURE_USER_SCOPES').split(/[\s,]+/).filter(Boolean),
       networkClient,
       passportSession: true,
-      secureCookie: false, // localhost HTTP only; use true with HTTPS
+      secureCookie: false, // Local HTTP only; use true with HTTPS.
     }),
     ClsModule.forRoot({ global: true, middleware: { mount: true } }),
-    DeepSecModule.forRootAsync({
-      inject: [ClsService],
-      useFactory: (cls: ClsService<DemoAuthStore>) => ({
-        // Called per protected request AFTER the app guard. Pass only identity
-        // metadata to the driver; login credentials/session objects stay app-side.
-        // Without CLS, use: req => req.user ? { endUserToken: req.user.accessToken } : null
-        mapIdentity: () => mapDemoIdentity(cls),
-        poolOptions: {
-          user: required('NODE_ORACLEDB_USER'),
-          password: required('NODE_ORACLEDB_PASSWORD'),
-          connectString: required('NODE_ORACLEDB_CONNECTIONSTRING'),
-          walletLocation: process.env.NODE_ORACLEDB_WALLET_LOCATION || undefined,
-          walletPassword: process.env.NODE_ORACLEDB_WALLET_PASSWORD || undefined,
-          poolMin: 0, poolMax: 4, poolIncrement: 1,
-          queueTimeout: 10000, connectTimeout: 10,
-          // Forwarded unchanged to node-oracledb's SHARED plugin. These are
-          // middle-tier/DB exchange credentials, not interactive login settings.
-          endUserSecParams: {
-            spiType: 'azure',
-            authFlow: 'onBehalfOf',
-            contextResolution: 'operation',
-            clientId: required('AZURE_DB_CLIENT_ID'),
-            clientSecret: required('AZURE_DB_CLIENT_CREDENTIAL'),
-            authority: required('AZURE_DB_AUTHORITY'),
-            scopes: required('AZURE_DB_SCOPES').split(/[\s,]+/).filter(Boolean),
-            cacheOptions: { enabled: true },
-            proxy: networkClient,
-          },
-        },
-      }),
-    }),
   ],
-  controllers: [EmployeesController],
-  providers: [EmployeesService,
-    { provide: APP_GUARD, useClass: AzureSessionGuard }],
+  controllers: [EmployeesController, StandaloneController, HealthController],
+  providers: [
+    { provide: ORACLE_POOL, useFactory: createOraclePool },
+    EmployeesService, StandaloneService, AzureSessionGuard,
+  ],
 })
 export class AppModule implements OnApplicationShutdown {
-  async onApplicationShutdown() { await networkClient?.close(); }
+  constructor(@Inject(ORACLE_POOL) private readonly pool: Pool) {}
+
+  async onApplicationShutdown() {
+    try { await this.pool.close(10); }
+    finally { await networkClient?.close(); }
+  }
 }

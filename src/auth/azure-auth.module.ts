@@ -3,8 +3,7 @@ import { PassportModule } from '@nestjs/passport';
 import { AzureSessionSerializer } from './azure-session.serializer';
 import { AzureLoginController, AzureLoginService, type AzureLoginOptions } from './azure-login';
 
-// Authentication belongs to this demo, not to the DeepSec package. This module
-// owns its login routes, cookies, MSAL client and optional Passport integration.
+// The app owns login routes, cookies, MSAL and Passport session integration.
 @Module({})
 export class AzureAuthModule implements NestModule {
   constructor(private readonly login: AzureLoginService) {}

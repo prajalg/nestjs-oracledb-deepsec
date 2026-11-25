@@ -1,9 +1,8 @@
 // Application-owned MSAL network client for the local corporate proxy.
-// This is networking configuration, not part of the reusable DeepSec package.
 import { ProxyAgent, fetch } from 'undici';
 
 export function createAzureNetworkClient() {
-  const proxyUrl = process.env.DEEPSEC_HTTPS_PROXY || process.env.HTTPS_PROXY ||
+  const proxyUrl = process.env.AZURE_HTTPS_PROXY || process.env.HTTPS_PROXY ||
     process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
   if (!proxyUrl) return undefined;
   const dispatcher = new ProxyAgent(proxyUrl);
