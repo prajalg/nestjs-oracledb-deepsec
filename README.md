@@ -21,8 +21,7 @@ The local app uses HTTP and in-memory sessions; restarting signs everyone out.
 
 - `src/auth/`: Azure login, Passport session restoration and authentication guard.
 - `src/app.module.ts`: register auth, CLS and the app-owned Oracle pool.
-- `src/database/oracle-options.ts`: ordinary Oracle credentials and wallet settings.
-- `src/database/oracle-pool.ts`: create the pool; AppModule closes it on shutdown.
+- `src/database/oracle-pool.ts`: configure and create the pool; AppModule closes it on shutdown.
 - `src/employees/`: authenticated route, borrow a connection, query all employee columns, release.
 - `src/database/standalone.*`: authenticated route, open a standalone connection, query database time, close.
 - `src/health.controller.ts`: public health endpoint, no database call.
