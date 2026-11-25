@@ -3,7 +3,7 @@ import { ClsModule } from 'nestjs-cls';
 import type { Pool } from 'oracledb';
 import { AzureAuthModule } from './auth/azure-auth.module';
 import { AzureSessionGuard } from './auth/azure-session.guard';
-import { createAzureNetworkClient } from './auth/azure-network';
+import { azureNetworkClient as networkClient } from './auth/azure-network';
 import { ORACLE_POOL, createOraclePool } from './database/oracle-pool';
 import { StandaloneController } from './database/standalone.controller';
 import { StandaloneService } from './database/standalone.service';
@@ -16,7 +16,6 @@ const required = (name: string) => {
   if (!value?.trim()) throw new Error(`${name} is required; see .env.example`);
   return value;
 };
-const networkClient = createAzureNetworkClient();
 
 @Module({
   imports: [

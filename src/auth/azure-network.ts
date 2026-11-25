@@ -28,3 +28,6 @@ export function createAzureNetworkClient() {
     close: () => dispatcher.close(),
   };
 }
+
+// Shared application-owned Azure client; closed by AppModule on shutdown.
+export const azureNetworkClient = createAzureNetworkClient();
