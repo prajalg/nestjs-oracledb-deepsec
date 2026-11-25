@@ -12,7 +12,7 @@ for (const scenario of ['query', 'standalone', 'login']) {
       return elements.get(id);
     };
     const diagnostic = { code: scenario === 'login' ? 'invalid_client' : 'ORA-00942',
-      message: 'AADSTS7000222: expired <script>fixture</script>' };
+      message: scenario === 'login' ? 'AADSTS65001: consent required <script>fixture</script>' : 'ORA-00942: table or view does not exist <script>fixture</script>' };
     let poll;
     let failed = false;
     const context = vm.createContext({

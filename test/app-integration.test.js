@@ -34,16 +34,15 @@ test('Azure login stays app-side while pool and standalone receive only ordinary
     async getConnection() { return connection('pool'); },
     async close(drain) { assert.equal(drain, 10); poolCloses++; },
   };
+  const connectionKeys = ['user', 'password', 'connectString', 'walletLocation', 'walletPassword', 'connectTimeout'];
   const creates = t.mock.method(oracledb, 'createPool', async options => {
     assert.equal(options.user, values.NODE_ORACLEDB_USER);
-    assert.equal(options.endUserSecParams, undefined);
-    assert.equal(options.endUserToken, undefined);
+    assert.deepEqual(Object.keys(options).sort(), [...connectionKeys, 'poolMin', 'poolMax', 'poolIncrement', 'queueTimeout'].sort());
     return pool;
   });
   const connects = t.mock.method(oracledb, 'getConnection', async options => {
     assert.equal(options.user, values.NODE_ORACLEDB_USER);
-    assert.equal(options.endUserSecParams, undefined);
-    assert.equal(options.endUserToken, undefined);
+    assert.deepEqual(Object.keys(options).sort(), [...connectionKeys].sort());
     return connection('standalone');
   });
   t.mock.method(PublicClientApplication.prototype, 'acquireTokenByDeviceCode', async request => {
