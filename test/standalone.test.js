@@ -25,6 +25,7 @@ for (const failure of [null, 'query', 'connect']) {
     };
     const connects = t.mock.method(oracledb, 'getConnection', async options => {
       assert.equal(options.user, 'fixture-user');
+      assert.equal(options.endUserSecParams, undefined, 'standalone does not inherit the pool configuration');
       assert.deepEqual(Object.keys(options).sort(),
         ['user', 'password', 'connectString', 'walletLocation', 'walletPassword', 'connectTimeout'].sort());
       if (failure === 'connect') throw new Error('Fixture connection failure');

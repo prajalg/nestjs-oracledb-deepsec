@@ -5,8 +5,10 @@ const { NestFactory } = require('@nestjs/core');
 const { PublicClientApplication } = require('@azure/msal-node');
 const oracledb = require('oracledb');
 
-test('Azure login stays app-side while pool and standalone receive only ordinary Oracle options', async t => {
+test('Azure login and CLS mapping supply driver scope to the existing pool and standalone queries', async t => {
   const values = {
+    AZURE_DB_CLIENT_ID: 'fixture-client', AZURE_DB_CLIENT_CREDENTIAL: 'fixture-secret',
+    AZURE_DB_AUTHORITY: 'https://login.microsoftonline.com/fixture', AZURE_DB_SCOPES: 'fixture-db/.default',
     NODE_ORACLEDB_USER: 'fixture-user', NODE_ORACLEDB_PASSWORD: 'fixture-password',
     NODE_ORACLEDB_CONNECTIONSTRING: 'localhost:1521/fixture',
     AZURE_USER_CLIENT_ID: 'fixture-login-client',
@@ -19,7 +21,11 @@ test('Azure login stays app-side while pool and standalone receive only ordinary
   let app;
   const connection = source => ({
     async execute(sql) {
+      const context = oracledb.getSecurityContextProvider();
+      const identity = context.getCurrentContext();
+      assert.equal(identity.endUserToken, 'fixture-server-only-user-token');
       await delay(1);
+      assert.equal(context.getCurrentContext(), identity);
       if (source === 'pool') {
         assert.match(sql, /FROM hr.employees/);
         return { metaData: [{ name: 'EMPLOYEE_ID' }], rows: [{ EMPLOYEE_ID: 100 }] };
@@ -37,11 +43,14 @@ test('Azure login stays app-side while pool and standalone receive only ordinary
   const connectionKeys = ['user', 'password', 'connectString', 'walletLocation', 'walletPassword', 'connectTimeout'];
   const creates = t.mock.method(oracledb, 'createPool', async options => {
     assert.equal(options.user, values.NODE_ORACLEDB_USER);
-    assert.deepEqual(Object.keys(options).sort(), [...connectionKeys, 'poolMin', 'poolMax', 'poolIncrement', 'queueTimeout'].sort());
+    assert.equal(options.endUserSecParams.clientId, 'fixture-client');
+    assert.equal(options.endUserSecParams.contextResolution, 'operation');
+    assert.deepEqual(Object.keys(options).sort(), [...connectionKeys, 'endUserSecParams', 'poolMin', 'poolMax', 'poolIncrement', 'queueTimeout'].sort());
     return pool;
   });
   const connects = t.mock.method(oracledb, 'getConnection', async options => {
     assert.equal(options.user, values.NODE_ORACLEDB_USER);
+    assert.equal(options.endUserSecParams, undefined, 'standalone does not inherit the pool configuration');
     assert.deepEqual(Object.keys(options).sort(), [...connectionKeys].sort());
     return connection('standalone');
   });
@@ -79,6 +88,7 @@ test('Azure login stays app-side while pool and standalone receive only ordinary
     assert.deepEqual(responses[1].rows, [{ DATABASE_TIME: 'fixture-time', SESSION_USER: 'FIXTURE_USER' }]);
     assert.equal(creates.mock.callCount(), 1);
     assert.equal(connects.mock.callCount(), 1);
+    assert.equal(oracledb.getSecurityContextProvider().getCurrentContext(), null);
     assert.equal(poolReleases, 1);
     assert.equal(standaloneCloses, 1);
     assert.equal(poolCloses, 0);

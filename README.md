@@ -1,9 +1,8 @@
 # NestJS + Oracle
 
 A small NestJS app with Azure device-code login, Passport sessions and CLS.
-Azure authenticates the app user. Its access token stays in the server-side
-session and request-local CLS; database creation and queries never receive it.
-Oracle connects using the normal database username/password and optional wallet.
+Azure signs the user into the app. One CLS mapper supplies that identity to the
+DeepSec plugin. The existing pool and standalone query methods stay unchanged.
 
 ## Run
 
@@ -40,3 +39,47 @@ npm test
 Offline tests cover login/session lifecycle, concurrent CLS users, unauthenticated
 requests, query errors, connection release and UI diagnostics. External Azure and
 Oracle I/O is stubbed. Live database permissions are those of the database user.
+
+## DeepSec integration compared with the plain baseline
+
+The baseline is `feat/plain-azure-cls-app`. This branch adds only the plugin,
+its app configuration, scope decorators and tests. Shared Azure networking is
+already part of the baseline.
+
+```ts
+DeepSecModule.forRootAsync({
+  inject: [ClsService],
+  useFactory: (cls: ClsService<DemoAuthStore>) => ({
+    mapIdentity: () => {
+      const user = cls.get('user');
+      return user ? { endUserToken: user.accessToken } : null;
+    },
+  }),
+});
+```
+
+The inline mapper reads the current authenticated user from CLS after the app guard.
+The app supplies an inline `endUserSecParams` object in `createOraclePool()`.
+It reads the `AZURE_DB_*` settings listed in `.env.example`; user login remains
+configured separately with `AZURE_USER_*`. Each resource supplies its own Oracle connection options directly. The standalone
+connection stays ordinary; add its own `endUserSecParams` to enable DeepSec there.
+
+- Employees uses global identity mapping with no decorator.
+- Standalone explicitly uses `@DeepSec()` for identity scope; its connection needs
+  its own `endUserSecParams` to use DeepSec at the database.
+- Health and the app's Azure login controller use `@SkipDeepSec()`.
+- Rare scoped roles use `@DeepSec({ dataRoles: ['SALARY_REPORT'] })`.
+  These replace mapped roles for that scope only; Oracle authorizes their use.
+
+The plugin never manages database resources or changes authentication. Query execution, guards, session handling and UI remain as in the baseline;
+the existing pool factory adds its own driver settings. App guards still control access on skipped routes.
+
+```sh
+git diff feat/plain-azure-cls-app -- src
+npm test
+```
+
+The offline suites exercise real Nest request pipelines and the driver context
+API. Azure token exchange and database I/O are stubbed. A live database-policy
+check still requires valid provider credentials. See the
+[plugin README](packages/nestjs-deepsec/README.md) for integration in other apps.

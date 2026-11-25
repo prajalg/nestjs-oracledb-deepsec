@@ -1,5 +1,5 @@
 import { Module, Inject, OnApplicationShutdown } from '@nestjs/common';
-import { ClsModule } from 'nestjs-cls';
+import { ClsModule, ClsService } from 'nestjs-cls';
 import type { Pool } from 'oracledb';
 import { AzureAuthModule } from './auth/azure-auth.module';
 import { AzureSessionGuard } from './auth/azure-session.guard';
@@ -10,6 +10,8 @@ import { StandaloneService } from './database/standalone.service';
 import { EmployeesController } from './employees/employees.controller';
 import { EmployeesService } from './employees/employees.service';
 import { HealthController } from './health.controller';
+import { DeepSecModule } from 'nestjs-oracledb-deepsec';
+import type { DemoAuthStore } from './auth/azure-session.guard';
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -28,6 +30,15 @@ const required = (name: string) => {
       secureCookie: false, // Local HTTP only; use true with HTTPS.
     }),
     ClsModule.forRoot({ global: true, middleware: { mount: true } }),
+    DeepSecModule.forRootAsync({
+      inject: [ClsService],
+      useFactory: (cls: ClsService<DemoAuthStore>) => ({
+        mapIdentity: () => {
+          const user = cls.get('user');
+          return user ? { endUserToken: user.accessToken } : null;
+        },
+      }),
+    }),
   ],
   controllers: [EmployeesController, StandaloneController, HealthController],
   providers: [
