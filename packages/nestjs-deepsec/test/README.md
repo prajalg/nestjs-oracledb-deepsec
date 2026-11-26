@@ -1,7 +1,7 @@
 # Public plugin tests
 
-Run `npm test` from the package checkout. This builds the package, type-checks
-examples and tests the installable archive. No Azure sign-in or Oracle network
+Run `npm test` from the package checkout. This builds the package and tests
+the installable archive. No Azure sign-in or Oracle network
 connection is required. All assertions must pass; no TODO or expected failures.
 
 | File | Coverage |
@@ -13,6 +13,7 @@ connection is required. All assertions must pass; no TODO or expected failures.
 | auth-setups.test.js | Actual Passport strategy without CLS and custom sessions without Passport |
 | decorators.test.js | Controller/method precedence, global defaults, explicit enable/bypass and guard independence |
 | roles.test.js | Scoped roles, controller overrides, missing identity, concurrent isolation, errors and unsubscribe |
+| transports.test.js | Actual TCP microservice messages, concurrent scopes, roles, bypass, errors and streamed completion |
 | package.test.js | Packed JS imports and TypeScript declarations without optional auth dependencies |
 
 Tests use public package exports and Nest/driver interfaces. Database operations

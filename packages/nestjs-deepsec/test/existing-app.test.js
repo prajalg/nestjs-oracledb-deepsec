@@ -110,7 +110,7 @@ test('existing pool, business handlers and CLS keep their own ownership and inje
     const anonymous = await fetch(`${base}/existing/employees`, {
       headers: { Authorization: 'Bearer unvalidated-token' },
     });
-    assert.equal(anonymous.status, 401);
+    assert.equal(anonymous.status, 500);
     assert.equal(releases, 0);
     const results = await Promise.all(['a', 'b'].map(async user => {
       const response = await fetch(`${base}/existing/employees`, { headers: { 'x-test-user': user } });

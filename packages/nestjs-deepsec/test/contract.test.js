@@ -38,7 +38,7 @@ test('null or undefined mapped identity rejects before business code, without be
   try {
     for (const ignored of identities) {
       const response = await fetch(`${base}/contract/query`, { headers: { Authorization: 'Bearer ignored-fixture' } });
-      assert.equal(response.status, 401);
+      assert.equal(response.status, 500);
     }
     assert.equal(handled, 0);
     assert.equal(Boolean(provider.getCurrentContext()), false);

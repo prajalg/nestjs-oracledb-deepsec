@@ -70,7 +70,8 @@ for (const setup of ['passport-bearer', 'custom-session']) {
       imports: [
         ...(setup === 'passport-bearer' ? [PassportModule.register({ session: false })] : []),
         DeepSecModule.forRoot({
-          async mapIdentity(request) {
+          async mapIdentity(context) {
+            const request = context.switchToHttp().getRequest();
             mappings++;
             // App chooses its identity source. Plugin has no auth-library branches.
             const user = setup === 'passport-bearer' ? request.user : request.session?.account;

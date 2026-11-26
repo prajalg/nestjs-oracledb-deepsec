@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
-const { Module, Controller, Get, Inject, ServiceUnavailableException } = require('@nestjs/common');
+const { Module, Controller, Get, Inject, UnauthorizedException, ServiceUnavailableException } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
 const oracledb = require('oracledb');
 const { DeepSecModule } = require('nestjs-oracledb-deepsec');
@@ -18,8 +18,11 @@ const databaseOptions = id => ({
 });
 const plugin = () => DeepSecModule.forRoot({
   // Fixture identities only. A real app reads the output of its authentication guard.
-  mapIdentity: request => request.headers['x-fixture-user']
-    ? { endUserToken: request.headers['x-fixture-user'] } : null,
+  mapIdentity: execution => {
+    const request = execution.switchToHttp().getRequest();
+    if (!request.headers['x-fixture-user']) throw new UnauthorizedException();
+    return { endUserToken: request.headers['x-fixture-user'] };
+  },
 });
 
 async function start(controller, providers = []) {

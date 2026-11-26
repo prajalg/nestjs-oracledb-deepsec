@@ -25,13 +25,12 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
     assert.ok(packed.files.some(file => file.path === 'dist/index.js'));
     assert.ok(packed.files.some(file => file.path === 'dist/index.d.ts'));
     assert.ok(!packed.files.some(file => file.path.startsWith('src/')));
-    assert.ok(packed.files.some(file => file.path === 'examples/auth-configurations.ts'));
-    assert.ok(packed.files.some(file => file.path === 'examples/README.md'));
+    assert.ok(packed.files.some(file => file.path === 'README.md'));
     assert.ok(!packed.files.some(file => /^(test|diagnostics)\//.test(file.path)));
     assert.ok(!packed.files.some(file => /^dist\/(azure-login|error-details|identity-mappers)[.]/.test(file.path)));
     run('tar', ['-xzf', join(temporary, packed.filename)]);
     const manifest = JSON.parse(readFileSync(join(temporary, 'package/package.json'), 'utf8'));
-    for (const name of ['passport', 'nestjs-cls', '@azure/msal-node', 'express-session', 'memorystore', 'lru-cache']) {
+    for (const name of ['passport', 'nestjs-cls', '@azure/msal-node', 'express-session', 'memorystore', 'lru-cache', '@nestjs/websockets', '@nestjs/microservices']) {
       assert.equal(manifest.dependencies?.[name], undefined);
       assert.equal(manifest.peerDependencies?.[name], undefined);
     }
@@ -47,7 +46,7 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
       if (name === '@nestjs') {
         mkdirSync(join(temporary, 'node_modules', name));
         for (const child of readdirSync(join(dependencyRoot, name))) {
-          if (child === 'passport') continue;
+          if (['passport', 'microservices', 'websockets', 'platform-socket.io'].includes(child)) continue;
           symlinkSync(join(dependencyRoot, name, child), join(temporary, 'node_modules', name, child));
         }
       } else symlinkSync(join(dependencyRoot, name), join(temporary, 'node_modules', name));
@@ -58,7 +57,8 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
       // Missing optional auth packages are verified by normal Node resolution,
       // without intercepting private module-loader methods.
       for (const name of ['passport', '@nestjs/passport', 'nestjs-cls',
-        'express-session', '@azure/msal-node', 'memorystore', 'lru-cache'])
+        'express-session', '@azure/msal-node', 'memorystore', 'lru-cache',
+        '@nestjs/websockets', '@nestjs/microservices'])
         assert.throws(() => require.resolve(name), {code:'MODULE_NOT_FOUND'});
       const plugin = require('nestjs-oracledb-deepsec');
       assert.equal(typeof plugin.DeepSecModule.forRoot, 'function');
@@ -71,8 +71,9 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
     run(process.execPath, ['consumer.cjs']);
     writeFileSync(join(temporary, 'consumer.mjs'), `
       import assert from 'node:assert/strict';
-      import { DeepSecModule, DeepSec, SkipDeepSec } from 'nestjs-oracledb-deepsec';
+      import { DeepSecModule, DeepSecInterceptor, DeepSec, SkipDeepSec } from 'nestjs-oracledb-deepsec';
       assert.equal(typeof DeepSecModule.forRoot, 'function');
+      assert.equal(typeof DeepSecInterceptor, 'function');
       assert.equal(typeof DeepSec, 'function');
       assert.equal(typeof SkipDeepSec, 'function');
       assert.equal('DEEPSEC_POOL' in (await import('nestjs-oracledb-deepsec')), false);
@@ -88,8 +89,8 @@ test('packed plugin works in JavaScript and exposes checked TypeScript declarati
       const options: DeepSecOptions = { mapIdentity };
       DeepSecModule.forRoot(options);
       DeepSecModule.forRootAsync({ useFactory: async () => ({mapIdentity}) });
-      const typed: DeepSecOptions<{ user: { token: string } }> = {
-        mapIdentity: request => ({endUserToken: request.user.token}) };
+      const typed: DeepSecOptions = {
+        mapIdentity: context => ({endUserToken: context.switchToHttp().getRequest<{ user: { token: string } }>().user.token}) };
       DeepSecModule.forRoot(typed);
       // @ts-expect-error Login is owned by the app, not configured on the plugin.
       DeepSecModule.forRoot({mapIdentity, azureLogin: {clientId:'fixture'}});

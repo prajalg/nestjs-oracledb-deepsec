@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
-const { Module, Controller, Get, ServiceUnavailableException } = require('@nestjs/common');
+const { Module, Controller, Get, UnauthorizedException, ServiceUnavailableException } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
 const { Observable, take } = require('rxjs');
 const oracledb = require('oracledb');
@@ -44,7 +44,9 @@ test('scoped roles replace mapped roles only within that handler; method metadat
   class App {}
   Module({ imports: [DeepSecModule.forRoot({
     // Fixture-only authentication input; never treat raw headers this way in an app.
-    async mapIdentity(request) {
+    async mapIdentity(context) {
+      const request = context.switchToHttp().getRequest();
+      if (!request.headers['x-fixture-user']) throw new UnauthorizedException();
       await delay(request.headers['x-fixture-user'] === 'alice' ? 3 : 1);
       return request.headers['x-fixture-user'] ? { ...original, endUserToken: request.headers['x-fixture-user'] } : null;
     },

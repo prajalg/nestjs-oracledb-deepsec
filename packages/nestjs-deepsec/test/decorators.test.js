@@ -54,8 +54,10 @@ test('scope decorators override class defaults; bypass does not authenticate or 
   decorate(Get(), GuardedController, 'skipped');
   class App {}
   Module({ imports: [DeepSecModule.forRoot({
-    mapIdentity: request => {
+    mapIdentity: execution => {
+      const request = execution.switchToHttp().getRequest();
       maps++;
+      if (!request.headers['x-fixture-user']) throw new UnauthorizedException();
       // Fixture-only identity; production guards establish the authenticated user.
       return request.headers['x-fixture-user'] ? { endUserToken: request.headers['x-fixture-user'] } : null;
     },
