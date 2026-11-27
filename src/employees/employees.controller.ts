@@ -1,9 +1,12 @@
-import { Controller, Get, Header, UseGuards } from '@nestjs/common';
+import { DeepSecInterceptor } from '../deepsec/deepsec';
+import { Controller, Get, Header, UseGuards, UseInterceptors } from '@nestjs/common';
 import { AzureSessionGuard } from '../auth/azure-session.guard';
 import { EmployeesService } from './employees.service';
 
 @Controller('api')
 @UseGuards(AzureSessionGuard)
+// Apply DeepSec identity mapping to all handlers in this controller.
+@UseInterceptors(DeepSecInterceptor)
 export class EmployeesController {
   constructor(private readonly database: EmployeesService) {}
 

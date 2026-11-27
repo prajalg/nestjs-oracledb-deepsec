@@ -1,11 +1,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
-const { Module, Controller, Get, UnauthorizedException, ServiceUnavailableException } = require('@nestjs/common');
+const { Module, Controller, Get, UnauthorizedException, ServiceUnavailableException, UseInterceptors } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
 const { Observable, take } = require('rxjs');
 const oracledb = require('oracledb');
-const { DeepSecModule, DeepSec, SkipDeepSec } = require('nestjs-oracledb-deepsec');
+const { DeepSecInterceptor, DeepSecConfiguration, RunWithDataRoles, SkipDeepSec } = require('../../dist/deepsec/deepsec');
 const provider = oracledb.getSecurityContextProvider();
 const decorate = (decorator, type, name) => decorator(type.prototype, name,
   Object.getOwnPropertyDescriptor(type.prototype, name));
@@ -13,12 +13,12 @@ const decorate = (decorator, type, name) => decorator(type.prototype, name,
 test('scoped roles replace mapped roles only within that handler; method metadata overrides controller metadata', async () => {
   const original = { endUserToken: 'fixture', dataRoles: ['READER'], attributes: { tenant: 'a' } };
   const configured = ['SALARY_REPORT'];
-  const salary = DeepSec({ dataRoles: configured });
+  const salary = RunWithDataRoles(configured);
   configured.push('MUTATED'); // Registration snapshots the trusted role configuration.
   class Reports {
     base() { return provider.getCurrentContext(); }
     salary() { return provider.getCurrentContext(); }
-    mapped() { return provider.getCurrentContext(); }
+    reader() { return provider.getCurrentContext(); }
     empty() { return provider.getCurrentContext(); }
     skipped() { return { scoped: provider.getCurrentContext() !== null }; }
     fail() {
@@ -27,22 +27,24 @@ test('scoped roles replace mapped roles only within that handler; method metadat
     }
   }
   Controller('reports')(Reports);
-  DeepSec({ dataRoles: ['CONTROLLER'] })(Reports);
-  for (const name of ['base', 'salary', 'mapped', 'empty', 'skipped', 'fail']) decorate(Get(name), Reports, name);
+  UseInterceptors(DeepSecInterceptor)(Reports);
+  RunWithDataRoles(['CONTROLLER'])(Reports);
+  for (const name of ['base', 'salary', 'reader', 'empty', 'skipped', 'fail']) decorate(Get(name), Reports, name);
   decorate(salary, Reports, 'salary');
   decorate(salary, Reports, 'fail');
-  decorate(DeepSec(), Reports, 'mapped');
-  decorate(DeepSec({ dataRoles: [] }), Reports, 'empty');
+  decorate(RunWithDataRoles(['READER']), Reports, 'reader');
+  decorate(RunWithDataRoles([]), Reports, 'empty');
   decorate(SkipDeepSec(), Reports, 'skipped');
   class Disabled {
-    report() { return provider.getCurrentContext(); }
+    report() { return { scoped: provider.getCurrentContext() !== null }; }
   }
   Controller('disabled')(Disabled);
+  UseInterceptors(DeepSecInterceptor)(Disabled);
   SkipDeepSec()(Disabled);
   decorate(Get(), Disabled, 'report');
   decorate(salary, Disabled, 'report');
   class App {}
-  Module({ imports: [DeepSecModule.forRoot({
+  Module({ imports: [DeepSecConfiguration.forRoot({
     // Fixture-only authentication input; never treat raw headers this way in an app.
     async mapIdentity(context) {
       const request = context.switchToHttp().getRequest();
@@ -59,18 +61,19 @@ test('scoped roles replace mapped roles only within that handler; method metadat
     const requests = [
       ['reports/base', 'alice', ['CONTROLLER']],
       ['reports/salary', 'alice', ['SALARY_REPORT']],
-      ['reports/mapped', 'bob', ['READER']],
+      ['reports/reader', 'bob', ['READER']],
       ['reports/empty', 'bob', []],
-      ['disabled', 'bob', ['SALARY_REPORT']],
     ];
     await Promise.all(requests.map(async ([path, user, roles]) => {
       const response = await fetch(`${base}/${path}`, { headers: { 'x-fixture-user': user } });
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), { endUserToken: user, dataRoles: roles, attributes: { tenant: 'a' } });
     }));
+    assert.deepEqual(await (await fetch(`${base}/disabled`)).json(), { scoped: false },
+      'roles cannot re-enable a skipped controller');
     const failure = await fetch(`${base}/reports/fail`, { headers: { 'x-fixture-user': 'alice' } });
     assert.equal(failure.status, 503);
-    const after = await fetch(`${base}/reports/mapped`, { headers: { 'x-fixture-user': 'alice' } });
+    const after = await fetch(`${base}/reports/reader`, { headers: { 'x-fixture-user': 'alice' } });
     assert.deepEqual((await after.json()).dataRoles, ['READER']);
     assert.deepEqual(await (await fetch(`${base}/reports/skipped`)).json(), { scoped: false });
     assert.deepEqual(original.dataRoles, ['READER']);
@@ -97,10 +100,11 @@ test('scoped-role Observable teardown stops work on completion, error and unsubs
     }
   }
   Controller('streams')(Streams);
-  DeepSec({ dataRoles: ['SALARY_REPORT'] })(Streams);
+  UseInterceptors(DeepSecInterceptor)(Streams);
+  RunWithDataRoles(['SALARY_REPORT'])(Streams);
   for (const name of ['stream', 'fail']) decorate(Get(name), Streams, name);
   class App {}
-  Module({ imports: [DeepSecModule.forRoot({ mapIdentity: () => ({ endUserToken: 'fixture', dataRoles: ['READER'] }) })],
+  Module({ imports: [DeepSecConfiguration.forRoot({ mapIdentity: () => ({ endUserToken: 'fixture', dataRoles: ['READER'] }) })],
     controllers: [Streams] })(App);
   const app = await NestFactory.create(App, { logger: false });
   try {

@@ -2,10 +2,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
 const { Module, Injectable, Inject, Controller, Get } = require('@nestjs/common');
-const { NestFactory, APP_GUARD } = require('@nestjs/core');
+const { NestFactory, APP_GUARD, APP_INTERCEPTOR } = require('@nestjs/core');
 const { ClsModule, ClsService } = require('nestjs-cls');
 const oracledb = require('oracledb');
-const { DeepSecModule, SkipDeepSec } = require('nestjs-oracledb-deepsec');
+const { DeepSecInterceptor, DeepSecConfiguration, SkipDeepSec } = require('../../dist/deepsec/deepsec');
 const contextProvider = oracledb.getSecurityContextProvider();
 const ORACLE_POOL = Symbol('EXISTING_APP_ORACLE_POOL');
 const poolOptions = {
@@ -82,7 +82,7 @@ test('existing pool, business handlers and CLS keep their own ownership and inje
   Module({ providers: [{ provide: ORACLE_POOL, useFactory: () => { poolCreations++; return pool; } }],
     exports: [ORACLE_POOL] })(ExistingDatabaseModule);
 
-  const bridge = DeepSecModule.forRootAsync({
+  const bridge = DeepSecConfiguration.forRootAsync({
     inject: [ClsService],
     useFactory: async cls => ({
       mapIdentity: () => {
@@ -96,7 +96,7 @@ test('existing pool, business handlers and CLS keep their own ownership and inje
   class ExistingAppModule {}
   Module({ imports: [ClsModule.forRoot({ global: true, middleware: { mount: true } }),
     ExistingDatabaseModule, bridge], controllers: [ExistingController],
-  providers: [ExistingEmployeeService, { provide: APP_GUARD, useClass: ExistingAuthenticationGuard }] })(ExistingAppModule);
+  providers: [{ provide: APP_INTERCEPTOR, useExisting: DeepSecInterceptor }, ExistingEmployeeService, { provide: APP_GUARD, useClass: ExistingAuthenticationGuard }] })(ExistingAppModule);
   let app;
   try {
     app = await NestFactory.create(ExistingAppModule, { logger: false, abortOnError: false });

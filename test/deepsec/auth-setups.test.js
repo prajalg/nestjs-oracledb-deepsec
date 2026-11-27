@@ -1,13 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { Module, Controller, Get, Post, Req, UseGuards, UnauthorizedException } = require('@nestjs/common');
+const { Module, Controller, Get, Post, Req, UseGuards, UnauthorizedException, UseInterceptors } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
 const { PassportModule, AuthGuard } = require('@nestjs/passport');
 const passport = require('passport');
 const session = require('express-session');
 const { setTimeout: delay } = require('node:timers/promises');
 const oracledb = require('oracledb');
-const { DeepSecModule, SkipDeepSec } = require('nestjs-oracledb-deepsec');
+const { DeepSecInterceptor, DeepSecConfiguration, SkipDeepSec } = require('../../dist/deepsec/deepsec');
 const provider = oracledb.getSecurityContextProvider();
 const users = {
   a: { accessToken: 'fixture-a', oracleRoles: ['READER'], tenant: 'a' },
@@ -58,6 +58,7 @@ for (const setup of ['passport-bearer', 'custom-session']) {
       }
     }
     Controller('existing')(ExistingController);
+    UseInterceptors(DeepSecInterceptor)(ExistingController);
     decorate(Get('employees'), ExistingController, 'employees');
     decorate(UseGuards(Guard), ExistingController, 'employees');
     decorate(Get('health'), ExistingController, 'health');
@@ -69,7 +70,7 @@ for (const setup of ['passport-bearer', 'custom-session']) {
     Module({
       imports: [
         ...(setup === 'passport-bearer' ? [PassportModule.register({ session: false })] : []),
-        DeepSecModule.forRoot({
+        DeepSecConfiguration.forRoot({
           async mapIdentity(context) {
             const request = context.switchToHttp().getRequest();
             mappings++;

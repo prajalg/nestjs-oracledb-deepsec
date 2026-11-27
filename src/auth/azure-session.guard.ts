@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
-import { ClsService, ClsStore } from 'nestjs-cls';
+import { ClsService } from 'nestjs-cls';
 
 // App-owned identity shape. Existing apps can keep their own Passport strategy.
 export interface DemoUser {
@@ -8,14 +8,11 @@ export interface DemoUser {
   expiresAt: number;
   username?: string;
 }
-export interface DemoAuthStore extends ClsStore {
-  user?: DemoUser;
-}
 
 @Injectable()
 export class AzureSessionGuard implements CanActivate {
   constructor(
-    private readonly cls: ClsService<DemoAuthStore>,
+    private readonly cls: ClsService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

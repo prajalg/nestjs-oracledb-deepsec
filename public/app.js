@@ -1,7 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const button = $('run');
-const standaloneButton = $('standalone');
 function errorMessage(data, fallback = 'Request failed') {
   return [data.code, data.message || fallback].filter(Boolean).join(': ');
 }
@@ -24,16 +23,15 @@ async function initialize() {
     status('Application unavailable', 'error');
   }
 }
-async function runQuery(endpoint, label) {
+async function runQuery() {
   button.disabled = true;
-  standaloneButton.disabled = true;
   button.textContent = 'Connecting…';
   $('results').hidden = true;
   $('empty').hidden = true;
   $('error').hidden = true;
   status('Loading…');
   try {
-    const response = await fetch(endpoint);
+    const response = await fetch('/api/query');
     if (response.status === 401) {
       await refreshLogin();
       throw new Error('Sign in with Azure to run the query.');
@@ -61,19 +59,17 @@ async function runQuery(endpoint, label) {
       return tr;
     }));
     $('results').hidden = false;
-    status(data.rows.length ? label : 'No rows returned', 'success');
+    status(data.rows.length ? 'Employees loaded' : 'No rows returned', 'success');
   } catch (error) {
     $('error').textContent = error.message;
     $('error').hidden = false;
     status('Connection failed', 'error');
   } finally {
     button.disabled = !signedIn;
-    standaloneButton.disabled = !signedIn;
     button.textContent = 'Load employees';
   }
 }
-button.addEventListener('click', () => runQuery('/api/query', 'Employees loaded'));
-standaloneButton.addEventListener('click', () => runQuery('/api/standalone', 'Database time loaded'));
+button.addEventListener('click', runQuery);
 let signedIn = false;
 let pollTimer;
 async function refreshLogin() {
@@ -85,7 +81,6 @@ async function refreshLogin() {
   $('login').hidden = signedIn;
   $('logout').hidden = !signedIn;
   button.disabled = !signedIn;
-  standaloneButton.disabled = !signedIn;
   $('account').textContent = signedIn ? (data.username || 'Signed in') : 'Not signed in';
   if (signedIn) {
     clearTimeout(pollTimer);

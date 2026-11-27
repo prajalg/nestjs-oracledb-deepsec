@@ -5,6 +5,7 @@ const { Module } = require('@nestjs/common');
 const { ClsModule, ClsService } = require('nestjs-cls');
 const { setTimeout: delay } = require('node:timers/promises');
 const { NestFactory } = require('@nestjs/core');
+const { DeepSecConfiguration } = require('../dist/deepsec/deepsec');
 const { AzureLoginService } = require('../dist/auth/azure-login');
 const { AzureAuthModule } = require('../dist/auth/azure-auth.module');
 const { HealthController } = require('../dist/health.controller');
@@ -60,9 +61,15 @@ async function createApp(login, azureLogin = loginOptions, connectionError) {
   if (auth) auth.providers = auth.providers.map(provider =>
     provider.provide === AzureLoginService ? { provide: AzureLoginService, useValue: login } : provider);
   class TestModule {}
-  Module({ imports: [...(auth ? [auth] : []), ClsModule.forRoot({ global: true, middleware: { mount: true } })],
+  Module({ imports: [...(auth ? [auth] : []), ClsModule.forRoot({ global: true, middleware: { mount: true } }),
+    DeepSecConfiguration.forRootAsync({ inject: [ClsService], useFactory: cls => ({
+      mapIdentity: () => {
+        const user = cls.get('user');
+        return user ? { endUserToken: user.accessToken } : null;
+      },
+    }) })],
     controllers: [EmployeesController, HealthController], providers: [EmployeesService, { provide: ORACLE_POOL, useValue: pool }, AzureSessionGuard] })(TestModule);
-  const app = await NestFactory.create(TestModule, { logger: false });
+  const app = await NestFactory.create(TestModule, { logger: false, abortOnError: false });
   await app.listen(0, '127.0.0.1');
   cls = app.get(ClsService);
   return { app, base: await app.getUrl(), observed, cls };

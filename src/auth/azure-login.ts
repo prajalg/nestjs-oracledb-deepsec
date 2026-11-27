@@ -1,4 +1,3 @@
-import { SkipDeepSec } from 'nestjs-oracledb-deepsec';
 import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Controller, Get, Post, Req, Res, Header, ForbiddenException, HttpException,
@@ -226,7 +225,6 @@ export class AzureLoginService implements OnApplicationShutdown {
   }
 }
 
-@SkipDeepSec() // Login endpoints run before an authenticated user is available.
 @Controller('auth')
 export class AzureLoginController {
   constructor(private readonly login: AzureLoginService) {}

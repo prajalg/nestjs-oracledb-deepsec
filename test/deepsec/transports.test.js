@@ -3,10 +3,10 @@ const assert = require('node:assert/strict');
 const net = require('node:net');
 const { setTimeout: delay } = require('node:timers/promises');
 const { Module, Controller } = require('@nestjs/common');
-const { NestFactory } = require('@nestjs/core');
+const { NestFactory, APP_INTERCEPTOR } = require('@nestjs/core');
 const { MessagePattern, Transport, ClientProxyFactory, RpcException } = require('@nestjs/microservices');
 const { Observable, firstValueFrom, toArray, timeout } = require('rxjs');
-const { DeepSecModule, DeepSec, SkipDeepSec } = require('nestjs-oracledb-deepsec');
+const { DeepSecInterceptor, DeepSecConfiguration, RunWithDataRoles, SkipDeepSec } = require('../../dist/deepsec/deepsec');
 const driver = require('oracledb').getSecurityContextProvider();
 const decorate = (decorator, type, name) => decorator(type.prototype, name,
   Object.getOwnPropertyDescriptor(type.prototype, name));
@@ -48,9 +48,9 @@ test('real TCP message handlers share the same plugin: mapping, concurrent scope
   Controller()(Messages);
   for (const name of ['query', 'health', 'report', 'fail', 'stream']) decorate(MessagePattern(name), Messages, name);
   decorate(SkipDeepSec(), Messages, 'health');
-  decorate(DeepSec({ dataRoles: ['SALARY_REPORT'] }), Messages, 'report');
+  decorate(RunWithDataRoles(['SALARY_REPORT']), Messages, 'report');
   class App {}
-  Module({ imports: [DeepSecModule.forRoot({
+  Module({ imports: [DeepSecConfiguration.forRoot({
     async mapIdentity(context) {
       types.push(context.getType());
       assert.equal(context.getHandler().name.length > 0, true);
@@ -60,7 +60,7 @@ test('real TCP message handlers share the same plugin: mapping, concurrent scope
       await delay(1);
       return { endUserToken: data.user, dataRoles: ['READER'], attributes: { user: data.user } };
     },
-  })], controllers: [Messages] })(App);
+  })], providers: [{ provide: APP_INTERCEPTOR, useExisting: DeepSecInterceptor }], controllers: [Messages] })(App);
   const port = await freePort();
   const options = { transport: Transport.TCP, options: { host: '127.0.0.1', port } };
   const app = await NestFactory.createMicroservice(App, { ...options, logger: false });

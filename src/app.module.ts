@@ -5,13 +5,10 @@ import { AzureAuthModule } from './auth/azure-auth.module';
 import { AzureSessionGuard } from './auth/azure-session.guard';
 import { azureNetworkClient as networkClient } from './auth/azure-network';
 import { ORACLE_POOL, createOraclePool } from './database/oracle-pool';
-import { StandaloneController } from './database/standalone.controller';
-import { StandaloneService } from './database/standalone.service';
 import { EmployeesController } from './employees/employees.controller';
 import { EmployeesService } from './employees/employees.service';
 import { HealthController } from './health.controller';
-import { DeepSecModule } from 'nestjs-oracledb-deepsec';
-import type { DemoAuthStore } from './auth/azure-session.guard';
+import { DeepSecConfiguration } from './deepsec/deepsec';
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -30,9 +27,11 @@ const required = (name: string) => {
       secureCookie: false, // Local HTTP only; use true with HTTPS.
     }),
     ClsModule.forRoot({ global: true, middleware: { mount: true } }),
-    DeepSecModule.forRootAsync({
+
+    // Configure how DeepSec reads the current authenticated user's identity.
+    DeepSecConfiguration.forRootAsync({
       inject: [ClsService],
-      useFactory: (cls: ClsService<DemoAuthStore>) => ({
+      useFactory: (cls: ClsService) => ({
         mapIdentity: () => {
           const user = cls.get('user');
           return user ? { endUserToken: user.accessToken } : null;
@@ -40,10 +39,10 @@ const required = (name: string) => {
       }),
     }),
   ],
-  controllers: [EmployeesController, StandaloneController, HealthController],
+  controllers: [EmployeesController, HealthController],
   providers: [
     { provide: ORACLE_POOL, useFactory: createOraclePool },
-    EmployeesService, StandaloneService, AzureSessionGuard,
+    EmployeesService, AzureSessionGuard,
   ],
 })
 export class AppModule implements OnApplicationShutdown {

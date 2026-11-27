@@ -1,10 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
-const { Module, Controller, Get, Inject, UnauthorizedException, ServiceUnavailableException } = require('@nestjs/common');
+const { Module, Controller, Get, Inject, UnauthorizedException, ServiceUnavailableException, UseInterceptors } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
 const oracledb = require('oracledb');
-const { DeepSecModule } = require('nestjs-oracledb-deepsec');
+const { DeepSecInterceptor, DeepSecConfiguration } = require('../../dist/deepsec/deepsec');
 const context = oracledb.getSecurityContextProvider();
 const decorate = (decorator, type, name) => decorator(type.prototype, name,
   Object.getOwnPropertyDescriptor(type.prototype, name));
@@ -16,7 +16,7 @@ const databaseOptions = id => ({
     authority: 'https://login.microsoftonline.com/fixture', scopes: [`fixture-${id}/.default`],
   },
 });
-const plugin = () => DeepSecModule.forRoot({
+const plugin = () => DeepSecConfiguration.forRoot({
   // Fixture identities only. A real app reads the output of its authentication guard.
   mapIdentity: execution => {
     const request = execution.switchToHttp().getRequest();
@@ -27,6 +27,7 @@ const plugin = () => DeepSecModule.forRoot({
 
 async function start(controller, providers = []) {
   Controller('resources')(controller);
+  UseInterceptors(DeepSecInterceptor)(controller);
   decorate(Get(), controller, 'query');
   class App {}
   Module({ imports: [plugin()], controllers: [controller], providers })(App);

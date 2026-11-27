@@ -16,7 +16,7 @@ export function createOraclePool() {
     poolMax: 4,
     poolIncrement: 1,
     queueTimeout: 10000,
-    // This pool's DeepSec settings; other resources can configure their own.
+    // Enable DeepSec on this pool. Each pool or standalone connection can use its own deepsec settings.
     endUserSecParams: {
       spiType: 'azure', authFlow: 'onBehalfOf', contextResolution: 'operation',
       clientId: process.env.AZURE_DB_CLIENT_ID,

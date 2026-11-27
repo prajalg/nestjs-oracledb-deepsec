@@ -1,16 +1,16 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
-const { Module, Controller, Get, Req, ServiceUnavailableException } = require('@nestjs/common');
+const { Module, Controller, Get, Req, ServiceUnavailableException, UseInterceptors } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
 const { Observable, take } = require('rxjs');
 const oracledb = require('oracledb');
-const { DeepSecModule, SkipDeepSec } = require('nestjs-oracledb-deepsec');
+const { DeepSecInterceptor, DeepSecConfiguration, SkipDeepSec } = require('../../dist/deepsec/deepsec');
 const provider = oracledb.getSecurityContextProvider();
 const decorate = (decorator, type, name) => decorator(type.prototype, name,
   Object.getOwnPropertyDescriptor(type.prototype, name));
 
-// Real Nest request pipeline, public package exports and driver context API.
+// Real Nest request pipeline, exported integration APIs and driver context API.
 // No private interceptor construction, DI-provider array edits or driver fields.
 async function createApp(options, handler = () => provider.getCurrentContext()) {
   class BusinessController {
@@ -18,12 +18,13 @@ async function createApp(options, handler = () => provider.getCurrentContext()) 
     query(request) { return handler(request); }
   }
   Controller('contract')(BusinessController);
+  UseInterceptors(DeepSecInterceptor)(BusinessController);
   decorate(Get('health'), BusinessController, 'health');
   decorate(SkipDeepSec(), BusinessController, 'health');
   decorate(Get('query'), BusinessController, 'query');
   Req()(BusinessController.prototype, 'query', 0);
   class App {}
-  Module({ imports: [DeepSecModule.forRoot(options)], controllers: [BusinessController] })(App);
+  Module({ imports: [DeepSecConfiguration.forRoot(options)], controllers: [BusinessController] })(App);
   const app = await NestFactory.create(App, { logger: false, abortOnError: false });
   try { await app.listen(0, '127.0.0.1'); }
   catch (error) { await app.close(); throw error; }

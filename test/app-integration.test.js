@@ -5,7 +5,7 @@ const { NestFactory } = require('@nestjs/core');
 const { PublicClientApplication } = require('@azure/msal-node');
 const oracledb = require('oracledb');
 
-test('Azure login and CLS mapping supply driver scope to the existing pool and standalone queries', async t => {
+test('Azure login and CLS mapping supply driver scope to the employee pool query', async t => {
   const values = {
     AZURE_DB_CLIENT_ID: 'fixture-client', AZURE_DB_CLIENT_CREDENTIAL: 'fixture-secret',
     AZURE_DB_AUTHORITY: 'https://login.microsoftonline.com/fixture', AZURE_DB_SCOPES: 'fixture-db/.default',
@@ -17,27 +17,22 @@ test('Azure login and CLS mapping supply driver scope to the existing pool and s
 
   };
   const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
-  let poolCloses = 0, poolReleases = 0, standaloneCloses = 0;
+  let poolCloses = 0, poolReleases = 0;
   let app;
-  const connection = source => ({
+  const connection = {
     async execute(sql) {
       const context = oracledb.getSecurityContextProvider();
       const identity = context.getCurrentContext();
       assert.equal(identity.endUserToken, 'fixture-server-only-user-token');
       await delay(1);
       assert.equal(context.getCurrentContext(), identity);
-      if (source === 'pool') {
-        assert.match(sql, /FROM hr.employees/);
-        return { metaData: [{ name: 'EMPLOYEE_ID' }], rows: [{ EMPLOYEE_ID: 100 }] };
-      }
-      assert.match(sql, /FROM dual/);
-      return { metaData: [{ name: 'DATABASE_TIME' }, { name: 'SESSION_USER' }],
-        rows: [{ DATABASE_TIME: 'fixture-time', SESSION_USER: 'FIXTURE_USER' }] };
+      assert.match(sql, /FROM hr.employees/);
+      return { metaData: [{ name: 'EMPLOYEE_ID' }], rows: [{ EMPLOYEE_ID: 100 }] };
     },
-    async close() { if (source === 'pool') poolReleases++; else standaloneCloses++; },
-  });
+    async close() { poolReleases++; },
+  };
   const pool = {
-    async getConnection() { return connection('pool'); },
+    async getConnection() { return connection; },
     async close(drain) { assert.equal(drain, 10); poolCloses++; },
   };
   const connectionKeys = ['user', 'password', 'connectString', 'walletLocation', 'walletPassword', 'connectTimeout'];
@@ -48,11 +43,8 @@ test('Azure login and CLS mapping supply driver scope to the existing pool and s
     assert.deepEqual(Object.keys(options).sort(), [...connectionKeys, 'endUserSecParams', 'poolMin', 'poolMax', 'poolIncrement', 'queueTimeout'].sort());
     return pool;
   });
-  const connects = t.mock.method(oracledb, 'getConnection', async options => {
-    assert.equal(options.user, values.NODE_ORACLEDB_USER);
-    assert.equal(options.endUserSecParams, undefined, 'standalone does not inherit the pool configuration');
-    assert.deepEqual(Object.keys(options).sort(), [...connectionKeys].sort());
-    return connection('standalone');
+  const connects = t.mock.method(oracledb, 'getConnection', async () => {
+    throw new Error('The employee query must borrow from the existing pool');
   });
   t.mock.method(PublicClientApplication.prototype, 'acquireTokenByDeviceCode', async request => {
     request.deviceCodeCallback({ verificationUri: 'https://login.microsoftonline.com/device',
@@ -67,8 +59,8 @@ test('Azure login and CLS mapping supply driver scope to the existing pool and s
     await app.listen(0, '127.0.0.1');
     const base = await app.getUrl();
     assert.equal((await fetch(`${base}/api/health`)).status, 200);
-    for (const path of ['query', 'standalone'])
-      assert.equal((await fetch(`${base}/api/${path}`)).status, 401);
+    assert.equal((await fetch(`${base}/api/query`)).status, 401);
+    assert.equal((await fetch(`${base}/api/standalone`)).status, 404);
     assert.equal(connects.mock.callCount(), 0);
     const start = await fetch(`${base}/auth/start`, { method: 'POST' });
     assert.equal(start.status, 201);
@@ -77,23 +69,18 @@ test('Azure login and CLS mapping supply driver scope to the existing pool and s
     const status = await fetch(`${base}/auth/status`, { headers: { Cookie: pendingCookie } });
     assert.equal((await status.json()).state, 'authenticated');
     const cookie = status.headers.get('set-cookie').split(';')[0];
-    const responses = await Promise.all(['query', 'standalone'].map(async path => {
-      const response = await fetch(`${base}/api/${path}`, { headers: { Cookie: cookie } });
-      assert.equal(response.status, 200);
-      const data = await response.json();
-      assert.ok(!JSON.stringify(data).includes('fixture-server-only-user-token'));
-      return data;
-    }));
-    assert.deepEqual(responses[0].rows, [{ EMPLOYEE_ID: 100 }]);
-    assert.deepEqual(responses[1].rows, [{ DATABASE_TIME: 'fixture-time', SESSION_USER: 'FIXTURE_USER' }]);
+    const response = await fetch(`${base}/api/query`, { headers: { Cookie: cookie } });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.ok(!JSON.stringify(data).includes('fixture-server-only-user-token'));
+    assert.deepEqual(data.rows, [{ EMPLOYEE_ID: 100 }]);
     assert.equal(creates.mock.callCount(), 1);
-    assert.equal(connects.mock.callCount(), 1);
+    assert.equal(connects.mock.callCount(), 0);
     assert.equal(oracledb.getSecurityContextProvider().getCurrentContext(), null);
     assert.equal(poolReleases, 1);
-    assert.equal(standaloneCloses, 1);
     assert.equal(poolCloses, 0);
     assert.equal((await fetch(`${base}/auth/logout`, { method: 'POST', headers: { Cookie: cookie } })).status, 201);
-    assert.equal((await fetch(`${base}/api/standalone`, { headers: { Cookie: cookie } })).status, 401);
+    assert.equal((await fetch(`${base}/api/query`, { headers: { Cookie: cookie } })).status, 401);
   } finally {
     if (app) await app.close();
     for (const [key, value] of Object.entries(previous)) {
@@ -102,5 +89,4 @@ test('Azure login and CLS mapping supply driver scope to the existing pool and s
     }
   }
   assert.equal(poolCloses, 1, 'the app owns pool shutdown');
-  assert.equal(standaloneCloses, 1, 'standalone connection was already closed by its query');
 });
