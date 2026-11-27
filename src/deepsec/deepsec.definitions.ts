@@ -1,11 +1,9 @@
 import { SetMetadata } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
+import type { SecurityContextMetadata } from 'oracledb';
 
-export interface DeepSecIdentity {
-  endUserToken: string;
-  dataRoles?: string[];
-  attributes?: Record<string, unknown>;
-}
+// Use the driver's token-based identity type; this integration requires a user token.
+export type DeepSecIdentity = Extract<SecurityContextMetadata, { endUserToken: string }>;
 
 export interface DeepSecOptions {
   /**

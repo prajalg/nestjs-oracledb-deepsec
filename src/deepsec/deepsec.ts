@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { Module, Injectable, Inject, ConfigurableModuleBuilder, type NestInterceptor, type ExecutionContext, type CallHandler } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
+import * as oracledb from 'oracledb';
 import 'oracledb/plugins/token/endUserSecurityProvider';
 
 import type { DeepSecIdentity, DeepSecOptions } from './deepsec.definitions';
@@ -10,9 +11,7 @@ export type * from './deepsec.definitions';
 export { RunWithDataRoles, SkipDeepSec } from './deepsec.definitions';
 
 // Get the driver's API for running code with the current user's identity.
-const securityContextProvider: {
-  runWithContext<T>(metadata: DeepSecIdentity, callback: () => T): T;
-} = require('oracledb').getSecurityContextProvider();
+const securityContextProvider = oracledb.getSecurityContextProvider();
 
 // Generate forRoot()/forRootAsync() and the token (lookup key) used to inject the app's options.
 const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } = new ConfigurableModuleBuilder<DeepSecOptions>()

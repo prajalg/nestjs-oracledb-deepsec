@@ -5,7 +5,7 @@ export const ORACLE_POOL = Symbol('APP_ORACLE_POOL');
 
 // The application creates and owns this normal Oracle pool.
 export function createOraclePool() {
-  const options = {
+  const options: oracledb.PoolAttributes = {
     user: process.env.NODE_ORACLEDB_USER,
     password: process.env.NODE_ORACLEDB_PASSWORD,
     connectString: process.env.NODE_ORACLEDB_CONNECTIONSTRING,
