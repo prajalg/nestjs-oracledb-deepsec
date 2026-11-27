@@ -24,7 +24,7 @@ src/
 ├── app.module.ts             # Configure auth, CLS, DeepSec and the Oracle pool
 ├── auth/                     # Azure login, Passport sessions and the auth guard
 ├── deepsec/
-│   ├── deepsec.ts             # Configuration class and interceptor
+│   ├── deepsec.interceptor.ts             # Configuration class and interceptor
 │   └── deepsec.definitions.ts # Types and scope decorators
 ├── database/oracle-pool.ts   # App-owned pool and its endUserSecParams
 ├── employees/                # Employee controller and query service

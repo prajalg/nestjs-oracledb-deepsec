@@ -15,7 +15,7 @@ connection is required. All assertions must pass; no TODO or expected failures.
 | decorators.test.js | Controller/handler bypass, roles cannot re-enable skipped scope and guard independence |
 | roles.test.js | Scoped roles, controller overrides, missing identity, concurrent isolation, errors and unsubscribe |
 | transports.test.js | Actual TCP microservice messages, concurrent scopes, roles, bypass, errors and streamed completion |
-| copied-file.test.js | Copy and compile deepsec.ts and deepsec.definitions.ts in a separate app without optional auth dependencies |
+| copied-file.test.js | Copy and compile deepsec.interceptor.ts and deepsec.definitions.ts in a separate app without optional auth dependencies |
 
 Tests use exported integration APIs and Nest/driver interfaces. Database operations
 are stubbed where needed. Driver token exchange, real database policy enforcement
@@ -23,4 +23,4 @@ and external provider compatibility need separate live checks. The plugin's
 subscription cleanup does not replace the app's connection-release lifecycle or
 the shared driver's database security-context cleanup.
 
-Consumers copy src/deepsec/deepsec.ts and src/deepsec/deepsec.definitions.ts; test files stay in this repository.
+Consumers copy src/deepsec/deepsec.interceptor.ts and src/deepsec/deepsec.definitions.ts; test files stay in this repository.

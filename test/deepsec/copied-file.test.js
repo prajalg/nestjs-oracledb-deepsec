@@ -14,7 +14,7 @@ test('copied DeepSec integration files compile and work without optional auth de
     assert.equal(result.status, 0, result.error?.message || result.stdout + result.stderr);
   };
   try {
-    for (const name of ['deepsec.ts', 'deepsec.definitions.ts'])
+    for (const name of ['deepsec.interceptor.ts', 'deepsec.definitions.ts'])
       copyFileSync(join(root, 'src/deepsec', name), join(temporary, name));
     mkdirSync(join(temporary, 'node_modules'));
     const excluded = new Set(['typescript', '.bin',
@@ -30,7 +30,7 @@ test('copied DeepSec integration files compile and work without optional auth de
       } else symlinkSync(join(dependencyRoot, name), join(temporary, 'node_modules', name));
     }
     writeFileSync(join(temporary, 'consumer.ts'), `
-      import { DeepSecConfiguration, DeepSecInterceptor, RunWithDataRoles, SkipDeepSec, type DeepSecOptions } from './deepsec';
+      import { DeepSecConfiguration, DeepSecInterceptor, RunWithDataRoles, SkipDeepSec, type DeepSecOptions } from './deepsec.interceptor';
       import type { DeepSecIdentity } from './deepsec.definitions';
       const identity: DeepSecIdentity = { endUserToken: 'fixture' };
       void identity;
@@ -55,12 +55,12 @@ test('copied DeepSec integration files compile and work without optional auth de
     run(process.execPath, [require.resolve('typescript/bin/tsc'), '--strict', '--skipLibCheck', 'false',
       '--types', 'node', '--experimentalDecorators', '--emitDecoratorMetadata', '--esModuleInterop',
       '--target', 'ES2022', '--module', 'Node16', '--moduleResolution', 'Node16',
-      '--outDir', 'build', 'deepsec.ts', 'consumer.ts']);
+      '--outDir', 'build', 'deepsec.interceptor.ts', 'consumer.ts']);
     writeFileSync(join(temporary, 'verify.cjs'), `
       const assert = require('node:assert/strict');
       for (const name of ['passport', 'nestjs-cls', '@azure/msal-node', '@nestjs/websockets'])
         assert.throws(() => require.resolve(name), { code: 'MODULE_NOT_FOUND' });
-      const integration = require('./build/deepsec');
+      const integration = require('./build/deepsec.interceptor');
       assert.equal(typeof integration.DeepSecConfiguration.forRoot, 'function');
       assert.equal(typeof integration.DeepSecConfiguration.forRootAsync, 'function');
       assert.equal(typeof integration.DeepSecInterceptor, 'function');

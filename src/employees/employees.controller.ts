@@ -1,4 +1,4 @@
-import { DeepSecInterceptor } from '../deepsec/deepsec';
+import { DeepSecInterceptor } from '../deepsec/deepsec.interceptor';
 import { Controller, Get, Header, UseGuards, UseInterceptors } from '@nestjs/common';
 import { AzureSessionGuard } from '../auth/azure-session.guard';
 import { EmployeesService } from './employees.service';

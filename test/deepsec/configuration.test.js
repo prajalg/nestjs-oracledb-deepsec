@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { Module } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
-const { DeepSecConfiguration } = require('../../dist/deepsec/deepsec');
+const { DeepSecConfiguration } = require('../../dist/deepsec/deepsec.interceptor');
 
 test('missing identity mapper fails startup for direct and asynchronous module configuration', async () => {
   for (const mapIdentity of [undefined, null, 'invalid']) {

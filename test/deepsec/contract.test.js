@@ -5,7 +5,7 @@ const { Module, Controller, Get, Req, ServiceUnavailableException, UseIntercepto
 const { NestFactory } = require('@nestjs/core');
 const { Observable, take } = require('rxjs');
 const oracledb = require('oracledb');
-const { DeepSecInterceptor, DeepSecConfiguration, SkipDeepSec } = require('../../dist/deepsec/deepsec');
+const { DeepSecInterceptor, DeepSecConfiguration, SkipDeepSec } = require('../../dist/deepsec/deepsec.interceptor');
 const provider = oracledb.getSecurityContextProvider();
 const decorate = (decorator, type, name) => decorator(type.prototype, name,
   Object.getOwnPropertyDescriptor(type.prototype, name));

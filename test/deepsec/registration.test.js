@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { Module, Controller, Get, UseInterceptors } = require('@nestjs/common');
 const { NestFactory, APP_INTERCEPTOR } = require('@nestjs/core');
-const { DeepSecConfiguration, DeepSecInterceptor, RunWithDataRoles } = require('../../dist/deepsec/deepsec');
+const { DeepSecConfiguration, DeepSecInterceptor, RunWithDataRoles } = require('../../dist/deepsec/deepsec.interceptor');
 const driver = require('oracledb').getSecurityContextProvider();
 const decorate = (decorator, type, name) => decorator(type.prototype, name,
   Object.getOwnPropertyDescriptor(type.prototype, name));

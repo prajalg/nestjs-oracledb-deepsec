@@ -7,7 +7,7 @@ const passport = require('passport');
 const session = require('express-session');
 const { setTimeout: delay } = require('node:timers/promises');
 const oracledb = require('oracledb');
-const { DeepSecInterceptor, DeepSecConfiguration, SkipDeepSec } = require('../../dist/deepsec/deepsec');
+const { DeepSecInterceptor, DeepSecConfiguration, SkipDeepSec } = require('../../dist/deepsec/deepsec.interceptor');
 const provider = oracledb.getSecurityContextProvider();
 const users = {
   a: { accessToken: 'fixture-a', oracleRoles: ['READER'], tenant: 'a' },

@@ -3,7 +3,7 @@
 
 _Integrating DeepSec requires only a few configuration changes. Existing query methods and SQL remain unchanged._
 
-Copy [deepsec.ts](src/deepsec/deepsec.ts) and [deepsec.definitions.ts](src/deepsec/deepsec.definitions.ts) into `src/deepsec/`. Your app compiles both files with its existing TypeScript build. Keep your existing authentication, database resources and query methods.
+Copy [deepsec.interceptor.ts](src/deepsec/deepsec.interceptor.ts) and [deepsec.definitions.ts](src/deepsec/deepsec.definitions.ts) into `src/deepsec/`. Your app compiles both files with its existing TypeScript build. Keep your existing authentication, database resources and query methods.
 
 >Tested with NestJS 11, RxJS 7, reflect-metadata 0.2 and node-oracledb 26.0.0.
 
@@ -12,7 +12,7 @@ Copy [deepsec.ts](src/deepsec/deepsec.ts) and [deepsec.definitions.ts](src/deeps
 In **`src/app.module.ts`**, the application's root module:
 
 ```ts
-import { DeepSecConfiguration } from './deepsec/deepsec';
+import { DeepSecConfiguration } from './deepsec/deepsec.interceptor';
 ```
 
 ## 2. Configure identity mapping
@@ -70,7 +70,7 @@ this.cls.set('user', authenticatedUser);
 
   ```ts
   import { Controller, UseInterceptors } from '@nestjs/common';
-  import { DeepSecInterceptor } from '../deepsec/deepsec';
+  import { DeepSecInterceptor } from '../deepsec/deepsec.interceptor';
 
   // Apply DeepSec identity mapping to all handlers in this controller.
   @UseInterceptors(DeepSecInterceptor)
@@ -83,7 +83,7 @@ this.cls.set('user', authenticatedUser);
 
   ```ts
   import { APP_INTERCEPTOR } from '@nestjs/core';
-  import { DeepSecInterceptor } from './deepsec/deepsec';
+  import { DeepSecInterceptor } from './deepsec/deepsec.interceptor';
 
   // Add inside @Module({ providers: [...] }):
   { provide: APP_INTERCEPTOR, useExisting: DeepSecInterceptor },
@@ -93,7 +93,7 @@ this.cls.set('user', authenticatedUser);
 - **Skip DeepSec:** can be used for explicitly skipping DeepSec on a particular controller/handler where an interceptor already applies, under global interception:
 
   ```ts
-  import { SkipDeepSec } from '../deepsec/deepsec'; // From src/employees/.
+  import { SkipDeepSec } from '../deepsec/deepsec.interceptor'; // From src/employees/.
 
   @SkipDeepSec()
   @Get('health')
@@ -104,7 +104,7 @@ this.cls.set('user', authenticatedUser);
 - **Customize roles:** override roles for an intercepted handler or controller:
 
   ```ts
-  import { RunWithDataRoles } from '../deepsec/deepsec'; // From src/employees/.
+  import { RunWithDataRoles } from '../deepsec/deepsec.interceptor'; // From src/employees/.
 
   @RunWithDataRoles(['SALARY_REPORT'])
   @Get('salary-report')
@@ -166,7 +166,7 @@ The driver handles token exchange, caching and EUSC. The integration preserves s
 Replace the registration in step 2 with one matching configuration below. Keep authentication guards and interceptor registration. Examples assume imports from a file directly inside `src/`:
 
 ```ts
-import { DeepSecConfiguration } from './deepsec/deepsec';
+import { DeepSecConfiguration } from './deepsec/deepsec.interceptor';
 ```
 
 ### HTTP: Passport or custom guard
@@ -211,7 +211,7 @@ Replace `.data.user` with the identity established by your message guard. Attach
 ```ts
 import { UseInterceptors } from '@nestjs/common';
 import { WebSocketGateway } from '@nestjs/websockets';
-import { DeepSecInterceptor } from './deepsec/deepsec';
+import { DeepSecInterceptor } from './deepsec/deepsec.interceptor';
 
 @WebSocketGateway()
 @UseInterceptors(DeepSecInterceptor)

@@ -6,7 +6,7 @@ const { Module, Controller } = require('@nestjs/common');
 const { NestFactory, APP_INTERCEPTOR } = require('@nestjs/core');
 const { MessagePattern, Transport, ClientProxyFactory, RpcException } = require('@nestjs/microservices');
 const { Observable, firstValueFrom, toArray, timeout } = require('rxjs');
-const { DeepSecInterceptor, DeepSecConfiguration, RunWithDataRoles, SkipDeepSec } = require('../../dist/deepsec/deepsec');
+const { DeepSecInterceptor, DeepSecConfiguration, RunWithDataRoles, SkipDeepSec } = require('../../dist/deepsec/deepsec.interceptor');
 const driver = require('oracledb').getSecurityContextProvider();
 const decorate = (decorator, type, name) => decorator(type.prototype, name,
   Object.getOwnPropertyDescriptor(type.prototype, name));

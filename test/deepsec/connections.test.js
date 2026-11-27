@@ -4,7 +4,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { Module, Controller, Get, Inject, UnauthorizedException, ServiceUnavailableException, UseInterceptors } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
 const oracledb = require('oracledb');
-const { DeepSecInterceptor, DeepSecConfiguration } = require('../../dist/deepsec/deepsec');
+const { DeepSecInterceptor, DeepSecConfiguration } = require('../../dist/deepsec/deepsec.interceptor');
 const context = oracledb.getSecurityContextProvider();
 const decorate = (decorator, type, name) => decorator(type.prototype, name,
   Object.getOwnPropertyDescriptor(type.prototype, name));

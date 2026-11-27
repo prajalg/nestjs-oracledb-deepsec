@@ -8,7 +8,7 @@ import { ORACLE_POOL, createOraclePool } from './database/oracle-pool';
 import { EmployeesController } from './employees/employees.controller';
 import { EmployeesService } from './employees/employees.service';
 import { HealthController } from './health.controller';
-import { DeepSecConfiguration } from './deepsec/deepsec';
+import { DeepSecConfiguration } from './deepsec/deepsec.interceptor';
 
 const required = (name: string) => {
   const value = process.env[name];
